@@ -1,5 +1,19 @@
 # EEL4664 Robotic Arm Project — Hiwonder miniArm
 
+Five progressive laboratory activities for the Hiwonder miniArm with Arduino Uno and the included front-mounted ESP32-S3-Cam.
+
+| Lab | Topic | Guide |
+| --- | --- | --- |
+| 00 | Setup and firmware | [lab00_setup](lab00_setup/README.md) |
+| 01 | K1/K2 teach-and-repeat pick/place | [lab01_manual_pick_place](lab01_manual_pick_place/README.md) |
+| 02 | Programmed action groups | [lab02_action_groups](lab02_action_groups/README.md) |
+| 03 | Python GUI, inverse kinematics and USB serial control | [lab03_inverse_kinematics](lab03_inverse_kinematics/README.md) |
+| 04 | Rubber-duck detection, camera calibration, IK and pick/place | [lab04_vision_guided_pick_place](lab04_vision_guided_pick_place/README.md) |
+
+**Implementation note:** Labs 00–02 use manufacturer workflows. Labs 03–04 are detailed implementation plans; custom serial firmware, robot calibration, and camera integration must be tested before classroom deployment. The front-mounted camera moves with the arm, so Lab 04 begins at a repeatable observation pose.
+
+---
+
 ## Arduino Uno setup and default firmware
 
 Student guide for compiling the Hiwonder miniArm default firmware using Arduino IDE. Instructor-tested with **Arduino IDE 2.3.10** and **FastLED 3.10.3**.
