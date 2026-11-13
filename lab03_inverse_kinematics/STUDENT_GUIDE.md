@@ -1,42 +1,117 @@
-# Lab 03 — 3D inverse kinematics from simulation to miniArm
+# Lab 03 — From DH parameters to inverse kinematics and robot motion
 
-Use your DH model to predict XYZ, verify a 3×4 Jacobian, solve numerical IK,
-and compare those predictions with the physical arm. Finish with a report
-using [Lab03_Report_Template.docx](Lab03_Report_Template.docx).
+**Develop the DH table from the assigned frames, understand how the provided
+code turns that table into robot motion, and run it in MATLAB and the Python GUI.**
+You are not required to write the FK, Jacobian or numerical IK algorithms.
 
-## What you are expected to do
+## What you will do
 
-The repository includes a working reference implementation. Your work is to
-derive and explain the model, independently verify the calculations, calibrate
-your arm, measure its performance, and explain discrepancies. Submitting
-screenshots or copying the supplied functions alone is insufficient.
+1. Use the instructor's assigned frames to develop and explain the Craig
+   modified-DH table, including the fixed tool offset.
+2. Follow the calculation flow: **DH table → transformations → FK → Jacobian
+   → numerical IK → calculated joint angles**.
+3. Run the provided MATLAB simulation and interpret its results.
+4. Run the provided Python GUI, then use your calibrated arm to test XYZ targets.
+5. Submit screenshots, experimental results and a short explanation in the
+   [report template](Lab03_Report_Template.docx).
 
-Work in teams of three with one arm. Review Lab 02, Craig modified DH, partial
-derivatives and numerical IK first. Do not assume that a successful simulation
-establishes accurate physical motion.
+Use the assigned frames throughout; you do not need to invent a new frame
+assignment. Work in teams of three with one arm. Review Lab 02 and the course
+material on DH parameters and numerical IK.
 
-## 1. Get the complete folder
+Detailed derivative calculations, finite-difference comparisons, unit tests and
+tracing numerical values through an IK iteration are **optional enrichment**.
+They are collected in [Optional Jacobian verification](OPTIONAL_JACOBIAN_VERIFICATION.md)
+and are not required in the report.
 
-Download the repository ZIP and extract it. Keep `matlab`, `python` and
+## 1. Get the provided files
+
+Download and extract the complete repository. Keep `matlab`, `python` and
 `miniarm_controlC` together inside `lab03_inverse_kinematics`. The GUI imports
 the shared solver from `../python`; copying only the GUI folder will not work.
 
-| Folder or file | Role |
+| File | What to look for |
 |---|---|
-| `matlab/miniarm_model.m` | MATLAB DH table, geometry, limits and collision dimensions |
-| `matlab/MiniArmIK.m` | MATLAB transformations, FK, Jacobians and DLS solver |
-| `python/kinematics.py` | Shared Python implementation of those calculations |
-| `python/miniarm_source_model.py` | Python default model matching MATLAB |
-| `python/collision.py` | Capsule and table clearance; continuous joint-edge checks |
-| `miniarm_controlC/miniarm_ik.py` | Unit conversion, calibrated limits and executable servo-path validation |
-| `miniarm_controlC/miniarm_controlC.py` | XYZ GUI, preview, serial communication and waypoint queue |
-| `miniarm_controlC/miniarm_calibration.py` | Measured angle ↔ servo conversion |
-| `miniarm_controlC/miniarm_calibrate.py` | Calibration-entry form |
-| `miniarm_controlC/miniarm_controlC/miniarm_controlC.ino` | Arduino servo, knob and LED control |
+| `matlab/miniarm_model.m` | DH table, tool offset, dimensions and starting joint angles |
+| `matlab/MiniArmIK.m` | `mdh`: transformations; `fk`: FK; `jacobian`: Jacobian; `solve`: numerical IK |
+| `matlab/demo_ik.m` | Loads the model, runs IK, displays the arm and position-error curve |
+| `python/kinematics.py` | Python version of the same FK, Jacobian and numerical IK calculations |
+| `miniarm_controlC/miniarm_ik.py` | Connects the shared solver to calibration and servo commands |
+| `miniarm_controlC/miniarm_controlC.py` | GUI for XYZ entry, preview and movement |
+| `miniarm_controlC/miniarm_calibrate.py` | Provided form for entering measured calibration |
+| `miniarm_controlC/miniarm_calibration.py` | Converts between measured angles and servo values |
+| `miniarm_controlC/miniarm_controlC/miniarm_controlC.ino` | Provided Arduino sketch for servo control |
 
-## 2. Establish the model in MATLAB
+You may need to enter your arm dimensions and serial port or load calibration.
+You do not need to modify the supplied mathematical algorithms.
 
-In MATLAB Online or desktop MATLAB, open `matlab` and run:
+## 2. Develop the DH table using the assigned frames
+
+Viewed from behind the arm at the Arduino and knobs, frame {0} has
+**X right, Y forward and Z up**. The base angle is 0° right, 90° forward and
+180° left. The four positioning joints are base, shoulder, elbow and wrist;
+claw opening is controlled separately.
+
+Use the instructor's frame drawing and the frame descriptions in the
+[MATLAB guide](matlab/README.md). Reproduce the assigned frames {0}–{4} and {T}
+on your sketch or photograph. Show each origin and X, Y, Z direction.
+
+1. Identify the joint axes and measure the link dimensions.
+2. Determine the four parameters for each Craig modified-DH row:
+   `a_(i-1), alpha_(i-1), d_i, theta_i`.
+3. State which parameter changes as each joint moves.
+4. Record the fixed wrist-to-tool transform separately.
+5. Fill in `miniarm_controlC/DH_table.txt` and compare your result with
+   `matlab/miniarm_model.m`. Explain any differences before running.
+
+The default dimensions are H=120, L1=56.5, L2=61.5 and L3=85 mm.
+In the model file, the last DH column contains a **fixed angular offset**;
+the code adds the current joint angle to it.
+
+## 3. Understand the calculation flow
+
+| Stage | Input | What the provided code does | Output |
+|---|---|---|---|
+| DH model | Assigned frames and measured geometry | Stores the link parameters | DH table and tool transform |
+| Transformations | DH parameters and current joint angles | Constructs a transformation matrix for each joint | Individual link transformations |
+| FK | Current joint angles and link transformations | Multiplies the transformations from base to tool | Current end-effector XYZ |
+| Jacobian | Current joint angles | Calculates how XYZ responds to small changes in each joint | A 3×4 matrix |
+| Numerical IK | Desired XYZ and an initial joint configuration | Repeatedly updates the joint angles to reduce position error | Joint angles and final error |
+| Servo control | Calculated angles and calibration | Converts angles into commands and checks the proposed motion | Commands sent to Arduino |
+
+**How to read the Jacobian:** its three rows correspond to X, Y and Z, and
+its four columns correspond to base, shoulder, elbow and wrist. For example,
+the first column describes how X, Y and Z change when only the base angle
+changes. You should understand this meaning; you do not have to derive or
+calculate every entry.
+
+**How the IK loop works:**
+
+1. Start with an initial set of joint angles.
+2. Run FK to find the current end-effector position.
+3. Subtract the current XYZ from the desired XYZ to get position error.
+4. Calculate the Jacobian at the current joint angles.
+5. Use the damped least-squares method to calculate a small joint-angle update.
+6. Add that update to the current angles and check the trial configuration.
+   Accept it when the actual position error decreases and the checks pass;
+   otherwise try a smaller update.
+7. Repeat with the accepted new angles until the error is small or the solver
+   reports that it cannot continue.
+
+The key update is **new joint angles = current joint angles + accepted update**.
+FK and the Jacobian are recalculated as the joint angles change.
+
+In MATLAB, `demo_ik` loads `miniarm_model`, calls `MiniArmIK.solve`, then
+animates the recorded configurations and plots the error. The animation
+shows solver updates, not a timed physical trajectory.
+
+For additional explanation, see the [MATLAB execution flow](matlab/README.md#execution-flow-when-you-type-demo_ik).
+For optional calculations and tests, see
+[Optional Jacobian verification](OPTIONAL_JACOBIAN_VERIFICATION.md).
+
+## 4. Run the MATLAB simulation
+
+In MATLAB Online or desktop MATLAB, open the provided `matlab` folder and run:
 
 ```matlab
 verify_miniarm
@@ -45,110 +120,56 @@ demo_ik
 demo_ik([-0.040; 0.100; 0.150])
 ```
 
-MATLAB target inputs are **metres**. Base MATLAB is sufficient; the toolbox
-comparison is optional. See the [MATLAB code guide](matlab/README.md) and
-[expected screenshots](matlab/EXPECTED_OUTPUT.md).
+Run these scripts as provided. You do not need to recreate their tests.
+The final command requests X=-40, Y=100, Z=150 mm; MATLAB inputs are in
+**metres**. Base MATLAB is sufficient; the toolbox comparison is optional.
 
-Use these axes, viewed from behind the arm at the Arduino and knobs:
-**X right, Y forward, Z up**. Base angle 0° points right, 90° forward, 180° left.
-The positioning vector is `[base, shoulder, elbow, wrist]`; claw opening is
-separate. Angles in the shared solver are **radians**. The GUI displays degrees.
+Inspect the target, final arm configuration, calculated joint angles and
+position-error curve. Save a screenshot and record whether the solver
+converged and its final error. Try at least three targets, including different
+X, Y or Z values. Compare with the [expected screenshots](matlab/EXPECTED_OUTPUT.md).
 
-Draw frames {0}–{4} and {T}, with all axes and positive rotations. Explain your
-Craig modified-DH table, including the fixed tool offset. Default dimensions
-are H=120, L1=56.5, L2=61.5, L3=85 mm; measure your own arm.
+The claw orientation is free. Different valid joint configurations may reach
+the same XYZ, and reaching XYZ does not guarantee a useful grasping orientation.
 
-## 3. Understand and verify the 3D Jacobian
-
-The position is the last column of the final FK matrix:
-`p = T[0:3,3]`. Thus `J[0,0] = ∂x/∂q_base`, `J[1,0] = ∂y/∂q_base`,
-and `J[2,0] = ∂z/∂q_base`. Repeat for the other joints to form all four columns.
-
-For one column j, change **only** joint j, keeping the others fixed:
-
-`J[:,j] ≈ (p(q + h*ej) - p(q - h*ej)) / (2*h)`.
-
-Use h in radians. The relation is `Δp ≈ J Δq`; the velocity relation is
-`p_dot = J q_dot`. The Python core's `partial` method differentiates each
-joint's matrix analytically; `finite` uses the position differences above.
+## 5. Run the Python GUI offline
 
 From a terminal in `miniarm_controlC`, run:
 
 ```console
 python -m pip install -r requirements.txt
-python -m unittest discover -s ../python -v
-python -m unittest discover -s . -p test_integration.py -v
-```
-
-Inspect a pose independently:
-
-```python
-import numpy as np
-import miniarm_ik as ik
-G = dict(H=120., L1=56.5, L2=61.5, L3=85.)
-q = [110., 70., -80., -40.]  # degrees for this display helper
-J = ik.jacobian(q, G, 'partial')  # mm/radian
-Jn = ik.jacobian(q, G, 'finite')
-print(J)
-print('Largest difference:', np.max(np.abs(J-Jn)))
-```
-
-Record J, Jn and their largest absolute difference. For a small change to one
-joint, compare `J @ dq` with the actual FK position change. Convert dq to radians.
-Explain why the base column's Z entry is zero for this idealized robot.
-
-## 4. Run the Python GUI offline
-
-Python needs NumPy, pyserial and Tkinter. Tkinter is included with the standard
-Windows Python installer; on Linux install your distribution's Tk package.
-Use the same Python interpreter for installation and execution.
-
-```console
 python miniarm_controlC.py --simulate
 ```
 
-No Arduino connection is opened in this mode. If no `calibration.json` exists,
-the GUI uses an explicitly labeled **synthetic calibration**. It is for software
-testing only and is never saved as your measured calibration.
+Use the same Python interpreter for installation and execution. The standard
+Windows Python installer includes Tkinter; on Linux install your distribution's
+Tk package if needed.
 
-1. Click **Initialize at startup pose**. Offline this initializes the emulator.
+No Arduino connection is opened in this mode. Without `calibration.json`, the
+GUI uses a labeled **synthetic calibration** for offline testing only.
+
+1. Click **Initialize at startup pose** to initialize the emulator.
 2. Select **IK CONTROL**.
-3. Enter X, Y, Z in **millimetres**, for example `-40`, `100`, `150`.
-4. Click **Calculate / Preview**. Inspect the purple arm, red target, error curve,
-   joint angles, solver residual and rounded-command error. This does not move.
-5. Click **Move Arm** to execute the checked waypoints in the emulator.
-6. Try the targets below, and save the experiment log.
+3. Enter X, Y and Z in **millimetres**, for example `-40`, `100`, `150`.
+4. Click **Calculate / Preview**. Inspect the arm, target, calculated angles,
+   position error and error curve. This does not send a movement.
+5. Click **Move Arm** to execute the checked sequence in the emulator.
+6. Save a screenshot and experiment log.
+
+Use the same target in MATLAB and Python and compare the results. First
+compare the shared XYZ axes and units. The GUI's calibrated joint limits and
+servo rounding can produce different final angles or errors.
 
 | Trial | X mm | Y mm | Z mm | Purpose |
 |---|---:|---:|---:|---|
 | A | -40 | 100 | 150 | Left of center |
 | B | 40 | 120 | 160 | Right of center |
 | C | 0 | 130 | 130 | Center, different height |
-| D | 1000 | 1000 | 1000 | Unreachable; no executable move |
+| D | 1000 | 1000 | 1000 | Unreachable; movement should be unavailable |
 
-A–C are candidate trials. Actual calibrated limits and starting posture can
-cause failure. A local solver failure does not prove that no solution exists.
-For hardware, record any rejected trial and use an instructor-approved nearby
-replacement; include both the rejected and replacement coordinates in the report.
-
-## 5. Trace one IK iteration
-
-`Calculate / Preview` calls the adapter's `inverse_kinematics`, which calls
-`python/kinematics.py:solve`. At each accepted current q:
-
-1. FK calculates current XYZ; `e = target - position(m,q)`.
-2. `jacobian(m,q)` calculates the 3×4 matrix at those angles.
-3. DLS calculates `dq = J.T @ solve(J @ J.T + lambda**2 * I, e)`.
-4. Limit the step size, then form `qCandidate = q + stepScale*dq`.
-5. Apply calibrated joint limits to the candidate.
-6. Accept it only if the actual FK error decreases and the configured
-   collision/path checks pass. Otherwise halve the step and retry.
-7. Set `q = trial`, save it, and recalculate FK and J at this new q.
-
-The solver uses metres, lambda=0.01 m, maximum joint-vector step=0.10 rad,
-0.0001 m convergence tolerance and at most 400 iterations, matching MATLAB.
-The displayed error curve is against **solver updates, not elapsed time**.
-The claw orientation is free; reaching XYZ does not guarantee a useful grasp.
+A–C are candidate trials; calibrated limits and starting posture can cause
+rejection. Record failures and use an instructor-approved nearby replacement
+for hardware if needed. A local solver failure does not prove that no solution exists.
 
 ## 6. Upload the Arduino sketch and calibrate
 
@@ -176,10 +197,10 @@ The claw orientation is free; reaching XYZ does not guarantee a useful grasp.
 | Elbow | 90° aligned, increasing forward bend | q_elbow = 90° − measured angle |
 | Wrist | 90° aligned, increasing forward bend | q_wrist = 90° − measured angle |
 
-Measure link/base/gripper envelopes and review capsule radii and margin in
-`python/miniarm_source_model.py`; keep the MATLAB model consistent. Defaults are
-provisional. Camera, held object, gripper fingers and nearby equipment are not
-fully represented. APP and KNOB controls bypass IK collision checking.
+Use the instructor-reviewed collision settings. Their capsule dimensions are
+approximate, and cameras, held objects, fingers and nearby equipment are not
+fully represented. APP and KNOB controls bypass IK collision checking. You are
+not required to develop or modify collision-checking code.
 
 ## 7. Validate FK and execute XYZ targets
 
@@ -220,23 +241,23 @@ Free claw pitch can prevent a successful grasp even when XYZ is accurate.
 Document that limitation and any changed targets or object placement. Record
 a video and save the log. Do not force a failed or obstructed trajectory.
 
-## 9. Submit a report and supporting files
+## 9. Submit the report and supporting evidence
 
-Submit `TeamName_Lab03_Report.docx` (PDF also if requested), your code changes,
-`DH_table.txt`, your measured `calibration.json`, experiment log and video link.
-Use the [report template](Lab03_Report_Template.docx). Include:
+Use [Lab03_Report_Template.docx](Lab03_Report_Template.docx). Submit:
 
-- Frames, dimensions, DH table and a labeled physical-arm sketch.
-- MATLAB simulation screenshot and Python preview screenshot.
-- 3×4 Jacobian, independent finite differences and a small-change experiment.
-- One explained IK update showing current q, error, dq, trial and acceptance.
+- Your DH table developed from the assigned frames, measured dimensions and
+  labeled frame sketch.
+- A short explanation of **DH table → FK → Jacobian → numerical IK → servo
+  commands**, in your own words.
+- MATLAB screenshots and results for three targets, plus a Python GUI preview.
 - Calibration evidence, three FK measurements and three physical IK trials.
-- Unreachable-target rejection, pick-and-place video and limitations discussion.
+- Unreachable-target rejection, pick-and-place video and experiment log.
+- A brief discussion of errors, failed trials and free claw orientation.
 
-Do not invent measurements. Label unperformed hardware work explicitly.
-Keep your measured calibration private to your team; do not replace it with the
-synthetic offline mapping. The public repository supplies complete reference
-code rather than a hidden-solution student generator.
+Attach `DH_table.txt` and your measured `calibration.json`.
+No original solver code, full numerical Jacobian, finite-difference comparison
+or hand-calculated IK iteration is required. If you change setup values, state
+which values you used. Label hardware experiments that were not performed.
 
 ## Troubleshooting
 
@@ -253,5 +274,6 @@ code rather than a hidden-solution student generator.
 | Target works offline but fails on hardware | Actual calibrated limits differ from the synthetic mapping |
 
 Further details: [MATLAB guide](matlab/README.md),
-[Jacobian walkthrough](matlab/JACOBIAN_WALKTHROUGH.md),
+[optional Jacobian calculations and tests](OPTIONAL_JACOBIAN_VERIFICATION.md),
 [collision model](COLLISIONS.md).
+

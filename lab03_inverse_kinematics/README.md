@@ -23,8 +23,9 @@ For the mathematics behind the Jacobian loop, see the
 *Example successful run. Your valid posture, iteration count and camera angle
 may differ; use the residual, limits and clearance checks to assess the result.*
 
-**Start with MATLAB.** This lab implements your own forward kinematics, two
-position Jacobians and damped numerical IK, then animates the result. The core
+**Start with MATLAB.** In the required lab, students develop the DH table from the assigned frames
+and run the provided FK, Jacobian and numerical IK code to understand the
+calculation flow. The detailed reference below supports optional deeper study. The core
 MATLAB code needs **base MATLAB only**. MathWorks Robotics System Toolbox is an
 optional independent cross-check. A runnable NumPy reference is also included.
 
@@ -383,4 +384,5 @@ provides the requested first simulation with much less setup.
 - [MathWorks: rigidBodyTree](https://www.mathworks.com/help/robotics/ref/rigidbodytree.html)
 - [Cyberbotics: Introduction to Webots](https://cyberbotics.com/doc/guide/introduction-to-webots)
 - [Cyberbotics: Physics nodes](https://cyberbotics.com/doc/reference/physics)
+
 
