@@ -49,7 +49,7 @@ about z_i; do not copy a standard-DH z_(i−1) geometric-Jacobian rule unchanged
 | `python/miniarm_source_model.py` | Defines the same MDH, base/tool, default seed, limits and collision configuration as `matlab/miniarm_model.m`. Its planar helpers are historical checks, not the GUI solver. |
 | `python/kinematics.py` | `mdh`: A and analytic derivative D. `fk`/`position`: chain multiplication and TCP. `jacobian`: analytic partial derivative or central finite differences. `solve`: the same DLS/backtracking loop as `MiniArmIK.solve`. Internal units m/rad. |
 | `python/collision.py` | Same capsule/floor geometry and continuous joint-edge checks as `MiniArmCollision.m`; Python indices are MATLAB indices minus one. |
-| `miniarm_controlC/miniarm_ik.py` | GUI adapter: mm/degrees at public display helpers, m/rad in the solver. Derives model joint limits from raw calibration limits, reorders channels, rounds commands and checks actual sequential execution. |
+| `miniarm_controlC/miniarm_ik.py` | GUI adapter: mm/degrees at public display helpers, m/rad in the solver. Intersects model joint limits with limits derived from raw calibration, reorders channels, rounds commands and checks actual sequential execution. |
 | `miniarm_controlC/miniarm_calibration.py` | Loads/checks calibration; implements forward/inverse piecewise-linear conversion, legacy-angle conversion and raw limits. All four joints use `servo_to_q`/`q_to_servo`. |
 | `miniarm_controlC/miniarm_calibrate.py` | Measurement form. New entries are DH q in degrees directly; it writes `angle_convention=joint`. Raw commands/limits are integers; measured angles may have decimals. No IK or serial I/O. |
 | `miniarm_controlC/miniarm_controlC.py` | Tk GUI, serial/emulator, upright initialization, preview/Move gating, and acknowledgement-driven execution. The preview camera only changes the drawing. |
@@ -147,11 +147,18 @@ q=[90,90,0,0] and immediate INIT; later upright requests use checked gradual J.
 
 - The MDH matrix formula, frame convention, TCP offset, Jacobian and DLS method
   agree with MATLAB source. No kinematic sign/axis correction was needed.
-- Default synthetic GUI elbow/wrist limits were +/-90 degrees, whereas MATLAB
-  simulation uses +/-160. They now match MATLAB exactly: base/shoulder 0..180,
-  elbow/wrist -160..160. Synthetic raw mappings are base q=s, shoulder q=180−s,
-  elbow/wrist q=180−2s with raw safe range 10..170. These invented mappings are
-  for simulation only. They are never written to the hardware calibration.
+- The instructor corrected elbow/wrist limits to **-90..90 degrees**. MATLAB,
+  Python reference and GUI now use that range; the previous +/-160 change was
+  incorrect for this miniArm. Base/shoulder remain 0..180. Synthetic raw mappings
+  are base q=s, shoulder q=180−s, elbow/wrist q=90−s over raw 0..180.
+  These are invented mappings for the emulator, not physical servo equations.
+  No synthetic calibration.json is shipped or written automatically.
+- Calibrated raw limits are converted to joint angles and intersected with the
+  model limits, so calibration can narrow but cannot enlarge the +/-90 range.
+- Upright logs the exact q-to-raw conversion per positioning channel. A correct
+  mathematical upright pose can physically bend backward if the saved measured
+  directions/offsets or legacy/direct-q convention are wrong. Correct those
+  measurements rather than changing the DH table or inventing another offset.
 - All four GUI joints now go through the same DH-q calibration API, including
   the base, avoiding a separate base conversion path.
 - Calibration rejects fractional raw commands and limits rather than silently
@@ -176,7 +183,7 @@ python -m unittest discover -s python -v
 python -m unittest discover -s miniarm_controlC -p "test_*.py" -v
 ```
 
-Audit result: **49 tests passed, 2 native Tk tests skipped without a display**.
+Audit result: **51 tests passed, 2 native Tk tests skipped without a display**.
 All Python sources compile. New checks compare the MATLAB model configuration
 including collision indices and GUI simulation limits; 60 random configurations
 against independent elementary transforms, XYZ formulas and an analytic Jacobian;
@@ -189,7 +196,12 @@ Reference q=[110,70,-80,-40] degrees gives TCP in mm:
 `[-46.01086233, 126.41380530, 97.29949248]`.
 From upright, target [100,100,50] mm converges in 42 updates with 0.0103 mm
 mathematical residual. Under the new synthetic mapping its rounded final miss
-is 0.8783 mm; final S1..S5 commands are [40,107,121,145,45].
+is 0.8783 mm; final S1..S5 commands are [40,124,152,145,45].
+Synthetic upright raw commands are [40,90,90,90,90]; the inverse mapping gives
+q=[90,90,0,0], and FK gives [0,0,323] mm. This is an emulator reference, not a
+physical startup command prescription. Offset/direction tests also verify an
+invented measured mapping with upright raw [70,60,120,120,100], for both direct
+and legacy formats; upright is not hard-coded to raw 90.
 
 MATLAB/Octave and native Tk windows were not executed in this audit environment;
 MATLAB parity here means source/configuration comparison plus independent

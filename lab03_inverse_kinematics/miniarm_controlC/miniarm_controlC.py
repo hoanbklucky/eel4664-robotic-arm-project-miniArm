@@ -399,6 +399,10 @@ class ArmApp:
         if not self.ready or self.busy: return
         try:
             pose=self.start_pose()  # fixed reference; never read manual sliders
+            if self.cal:
+                self.log('Upright calibration conversion: '+', '.join(
+                    f'{name} q={q:g} deg -> S{mc.SERVO_INDEX[name]+1} raw {pose[mc.SERVO_INDEX[name]]}'
+                    for name,q in zip(mc.JOINTS,[90,90,0,0])))
             if self.initialized:
                 pose[CLAW]=self.positions[CLAW]  # do not release a held object
                 if self.cal:

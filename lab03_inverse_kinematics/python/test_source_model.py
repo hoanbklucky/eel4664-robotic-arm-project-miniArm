@@ -51,7 +51,7 @@ class SourceModelTests(unittest.TestCase):
 
     def test_full_xyz_and_reachable_goals(self):
         m=source_model()
-        for goal in ([110,70,-80,-40],[60,50,-70,-50],[90,110,-100,-30]):
+        for goal in ([110,70,-80,-40],[60,50,-70,-50],[90,100,-80,-30]):
             target=position(m,np.deg2rad(goal))
             for method in ('partial','finite'):
                 _,r=solve(m,target,method=method)

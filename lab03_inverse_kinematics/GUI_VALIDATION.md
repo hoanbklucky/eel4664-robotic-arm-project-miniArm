@@ -1,5 +1,23 @@
 # Python GUI integration validation
 
+## Corrected +/-90-degree limits and upright calibration check (latest)
+
+The instructor confirmed +/-90 degrees for elbow/wrist. MATLAB and Python model
+limits and the default synthetic mapping now match that range. Calibration can
+narrow nominal limits but cannot enlarge them. The prior +/-160 correction was
+incorrect for this miniArm. Upright now logs the per-joint q-to-raw conversions.
+51 tests pass, with 2 native Tk tests skipped without a display. New tests cover
+measured offsets and opposite servo directions for both direct-q and legacy
+formats, and prevent saved calibration from expanding the +/-90 limits.
+Synthetic upright commands decode to q=[90,90,0,0], while an invented offset
+calibration yields upright raw [70,60,120,120,100] and decodes to the same q.
+These are software conversion tests, not measurements of this user's robot.
+No hardware movement or new MATLAB runtime execution was performed.
+
+The [pipeline audit](PYTHON_MATLAB_AUDIT.md) and calibration guide contain current
+values. Sections below record earlier revisions. Current target [100,100,50]
+converges at 0.0103 mm, with rounded miss 0.8783 mm under the +/-90 synthetic map.
+
 ## MATLAB/Python consistency audit (latest)
 
 See [the complete pipeline audit](PYTHON_MATLAB_AUDIT.md). All 49 noninteractive

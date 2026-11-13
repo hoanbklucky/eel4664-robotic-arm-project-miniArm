@@ -26,7 +26,12 @@ def model(geometry, calibration=None):
             lo, hi = calibration.limits(mc.SERVO_INDEX[name])
             values = [calibration.servo_to_q(name,s) for s in (lo,hi)]
             bounds.append(sorted(values))
-        m.limits = np.deg2rad(bounds)
+        # Measured raw limits may narrow, but never enlarge, the model limits.
+        calibrated = np.deg2rad(bounds)
+        m.limits = np.column_stack((np.maximum(m.limits[:,0],calibrated[:,0]),
+                                    np.minimum(m.limits[:,1],calibrated[:,1])))
+        if np.any(m.limits[:,0] >= m.limits[:,1]):
+            raise ValueError('Calibration has no usable overlap with model joint limits; check angle references')
         m.q0 = np.clip(m.q0,m.limits[:,0],m.limits[:,1])
     m.validate()
     return m
@@ -120,16 +125,16 @@ def plan_motion(m,cal,start,target_mm,result,max_miss_mm=10):
     return waypoints,miss
 
 def demo_calibration():
-    """Synthetic affine mappings whose joint limits equal miniarm_model.m.
+    """Invented mapping for the OFFLINE emulator, never a hardware calibration.
 
-    This is not a claim about physical servo travel. The mapping is never
-    saved as a real calibration. Pitch q=180-2*s spans +/-160 degrees over
-    raw 10..170; base q=s and shoulder q=180-s span 0..180 over raw 0..180.
+    q_base=s, q_shoulder=180-s, q_elbow=q_wrist=90-s (degrees).
+    Raw 0..180 covers base/shoulder 0..180 and elbow/wrist +/-90.
+    Real servo offsets/directions must come from measurements, not this table.
     """
     data=dict(angle_convention='joint',joints={
         'base':dict(points=[[0,0],[90,90],[180,180]],min=0,max=180),
         'arm':dict(points=[[0,180],[90,90],[180,0]],min=0,max=180),
-        'forearm':dict(points=[[10,160],[90,0],[170,-160]],min=10,max=170),
-        'wrist':dict(points=[[10,160],[90,0],[170,-160]],min=10,max=170)},
+        'forearm':dict(points=[[0,90],[90,0],[180,-90]],min=0,max=180),
+        'wrist':dict(points=[[0,90],[90,0],[180,-90]],min=0,max=180)},
         claw=dict(open=40,closed=90,min=40,max=90))
     return mc.Calibration(data)

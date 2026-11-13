@@ -20,15 +20,18 @@ class CollisionTests(unittest.TestCase):
             self.assertAlmostEqual(segment_distance(C,D,A,B),expected)
 
     def test_base_intersection_rejected_even_at_zero_position_error(self):
-        m=source_model(); q=np.deg2rad([90,100,-120,-120])
+        m=source_model(); m.limits[2:]=np.deg2rad([[-160,160],[-160,160]])
+        # Deliberately broad range for this historical generic collision stress case.
+        q=np.deg2rad([90,100,-120,-120])
         distance,pair=clearance(m,q)
         self.assertLess(distance,0); self.assertEqual(pair,'base / tool')
         _,r=solve(m,position(m,q),q0=q)
         self.assertFalse(r['success']); self.assertEqual(r['status'],'seed_in_collision')
 
     def test_regression_old_solver_converges_into_base(self):
-        m=source_model(); target=position(m,np.deg2rad([90,120,-100,-120]))
-        old=source_model(); old.collision=None
+        m=source_model(); m.limits[2:]=np.deg2rad([[-160,160],[-160,160]])
+        target=position(m,np.deg2rad([90,120,-100,-120]))
+        old=source_model(); old.limits=m.limits.copy(); old.collision=None
         old_q,old_r=solve(old,target)
         self.assertTrue(old_r['success']); self.assertLess(clearance(m,old_q)[0],0)
         q,r=solve(m,target)

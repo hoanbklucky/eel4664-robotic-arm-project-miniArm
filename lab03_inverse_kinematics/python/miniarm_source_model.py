@@ -14,7 +14,7 @@ def source_model():
     tool=np.eye(4); tool[0,3]=.085
     m=Model(np.array([[0,0,.120,0],[0,np.pi/2,0,0],
                            [.0565,0,0,0],[.0615,0,0,0]]), np.eye(4), tool,
-                 np.deg2rad([[0,180],[0,180],[-160,160],[-160,160]]),
+                 np.deg2rad([[0,180],[0,180],[-90,90],[-90,90]]),
                  np.deg2rad([90,60,-60,-60]), example_only=True)
     # Provisional capsule radii: measure actual link/gripper/base envelopes.
     m.collision=dict(edges=np.array([[0,1],[2,3],[3,4],[4,5]]),

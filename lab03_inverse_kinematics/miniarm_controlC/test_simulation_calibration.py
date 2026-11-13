@@ -55,7 +55,7 @@ class SimulationCalibrationTests(unittest.TestCase):
         self.assertFalse(r['success']);self.assertEqual(r['status'],'stalled')
         self.assertAlmostEqual(r['error']*1000,93.230517,places=4)
         # This is a data-reference issue; do not silently rewrite legacy files.
-        np.testing.assert_allclose(np.rad2deg(m.limits[2:]),[[0,180],[0,180]])
+        np.testing.assert_allclose(np.rad2deg(m.limits[2:]),[[0,90],[0,90]])
 
     def test_synthetic_reload_cannot_silently_switch_to_saved_calibration(self):
         app=gui.ArmApp.__new__(gui.ArmApp);app.synthetic=True;messages=[];app.log=messages.append

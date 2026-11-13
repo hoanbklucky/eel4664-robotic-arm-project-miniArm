@@ -4,6 +4,9 @@ m=miniarm_model(); MiniArmIK.validate(m);
 assert(abs(MiniArmCollision.segmentDistance([0;0;0],[1;0;0],[.5;-1;0],[.5;1;0]))<1e-12);
 assert(abs(MiniArmCollision.segmentDistance([0;0;0],[1;0;0],[0;1;0],[1;1;0])-1)<1e-12);
 assert(abs(MiniArmCollision.segmentDistance([0;0;0],[0;0;0],[1;-1;0],[1;1;0])-1)<1e-12);
+% Deliberately wider generic stress model for historical collision regressions;
+% these are NOT miniArm operating limits.
+m.limits(3:4,:)=deg2rad([-160 160;-160 160]);
 q=deg2rad([90;100;-120;-120]);
 assert(MiniArmCollision.clearance(m,q)<0);
 [~,r]=MiniArmIK.solve(m,MiniArmIK.fk(m,q),q);
@@ -24,6 +27,7 @@ a=deg2rad([90;30;-120;-160]); b=deg2rad([90;30;-120;160]);
 assert(MiniArmCollision.clearance(tableOnly,a)>0 && MiniArmCollision.clearance(tableOnly,b)>0);
 assert(MiniArmCollision.clearance(tableOnly,(a+b)/2)<0);
 assert(~MiniArmCollision.edgeClear(tableOnly,a,b));
+m=miniarm_model(); % restore actual +/-90-degree miniArm model
 [~,r]=MiniArmIK.solve(m,MiniArmIK.fk(m,m.demoGoal),m.q0);
 assert(r.success && r.clearance>0);
 fprintf('Collision rejection, interpolation and safe-goal regressions passed.\n');

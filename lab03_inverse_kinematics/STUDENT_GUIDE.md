@@ -160,6 +160,9 @@ Tk package if needed.
 No Arduino connection is opened in this mode. By default, `--simulate` uses a
 labeled **synthetic calibration** and ignores any local `calibration.json`, so
 the offline exercise is reproducible. It does not overwrite your saved file.
+Both MATLAB and Python use nominal elbow/wrist limits of -90..90 degrees.
+Synthetic servo mappings are invented for the emulator; they must not be copied
+into the real arm's calibration. Actual offsets/directions come from measurements.
 To deliberately test a measured hardware mapping and its limits offline, run
 `python miniarm_controlC.py --simulate --use-calibration`. The banner identifies
 which calibration is active. An invalid/missing file in that explicit mode is

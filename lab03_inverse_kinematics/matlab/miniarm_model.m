@@ -8,7 +8,7 @@ m.tool = eye(4); m.tool(1,4) = .085;
 % Frame {0}: x right, y forward, z up, viewed from behind at Arduino/knobs.
 % q = [base_angle; shoulder; elbow; wrist], in radians. Base 90 deg = forward.
 % These are SIMULATION limits, NOT inferred servo limits.
-m.limits = deg2rad([0 180; 0 180; -160 160; -160 160]);
+m.limits = deg2rad([0 180; 0 180; -90 90; -90 90]);
 m.q0 = deg2rad([90;60;-60;-60]);
 m.demoGoal = deg2rad([110;70;-80;-40]);
 m.exampleOnly = true; % keeps export guarded until limits/calibration verified

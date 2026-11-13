@@ -185,6 +185,25 @@ Interpolation passes through the fitted data by construction, so checking only
 those same entries does not establish physical accuracy. Validate independently.
 If the sign or reference is wrong, correct it before collecting more points.
 
+## If Straighten arm upright bends the physical arm backward
+
+The requested mathematical pose remains q=[90,90,0,0]. Raw commands are obtained
+from your measured file, not from the slider values. Read the new terminal line
+**Upright calibration conversion** to see each channel's exact raw command.
+If that bends the physical arm, verify which applied raw command actually makes
+shoulder q=90, elbow q=0 and wrist q=0. Compare those physical measurements with
+the corresponding saved rows and the angle_convention field. A backward bend
+alone does not determine whether an offset, direction or angle reference is wrong.
+Do not guess a universal 90-degree correction or just change the JSON metadata.
+
+No synthetic calibration.json is shipped. The synthetic table exists in memory
+for the emulator and is never a physical calibration. Its upright raw commands
+are [40,90,90,90,90], but real upright commands can differ for every joint.
+The nominal elbow/wrist range is +/-90 degrees; calibrated limits may narrow it.
+If the problem persists, provide the current calibration.json and whether the
+controller banner says SIMULATION or Hardware port so the actual mapping can be
+checked. Keep a backup of measurements before editing them.
+
 ## 9. Existing calibration files
 
 New files explicitly contain `"angle_convention": "joint"` and store the DH
