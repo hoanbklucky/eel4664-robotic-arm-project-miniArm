@@ -24,5 +24,5 @@ for k=1:20
     assert(norm(G(4:6,:)-MiniArmIK.jacobian(m,q),'fro')<1e-9);
 end
 fprintf('20 Robotics System Toolbox FK/Jacobian comparisons passed.\n');
-figure; show(robot,m.q0+m.mdh(:,4)); title('Toolbox model: example geometry');
+figure; show(robot,m.q0+m.mdh(:,4)); title('Toolbox model: supplied MDH geometry');
 end

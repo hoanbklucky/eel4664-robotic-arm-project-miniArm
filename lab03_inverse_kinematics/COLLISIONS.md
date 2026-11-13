@@ -98,7 +98,8 @@ clearance but does not command or certify a hardware execution path.
 ## Executed regression example
 
 With the instructor geometry, target XYZ approximately
-`[14.7810,0,106.2560]` mm gives a useful negative test. The previous solver
+`[0,14.7810,106.2560]` mm in the current x-right/y-forward frame gives a useful
+negative test (base angle 90 degrees). The previous solver
 converges with a model position error of 0.03094 mm while its tool/base clearance
 is **-14.22 mm** under the provisional capsule model. The revised solver rejects
 that target result and returns failure with a clear final iterate.

@@ -1,7 +1,8 @@
 """Instructor-source geometry and angle convention; no hardware connection.
 
 Original GUI uses millimetres/degrees and solves a 2x3 planar task.
-Core Model uses metres/radians and supports a 3x4 XYZ task.
+Current simulation uses metres/radians, base 0..180 degrees, x right/y forward/z up.
+Its XYZ axes are rotated relative to the original GUI's x forward/y left axes.
 """
 import numpy as np
 from kinematics import Model, position, jacobian, solve
@@ -13,8 +14,8 @@ def source_model():
     tool=np.eye(4); tool[0,3]=.085
     m=Model(np.array([[0,0,.120,0],[0,np.pi/2,0,0],
                            [.0565,0,0,0],[.0615,0,0,0]]), np.eye(4), tool,
-                 np.deg2rad([[-90,90],[0,180],[-160,160],[-160,160]]),
-                 np.deg2rad([0,60,-60,-60]), example_only=True)
+                 np.deg2rad([[0,180],[0,180],[-160,160],[-160,160]]),
+                 np.deg2rad([90,60,-60,-60]), example_only=True)
     # Provisional capsule radii: measure actual link/gripper/base envelopes.
     m.collision=dict(edges=np.array([[0,1],[2,3],[3,4],[4,5]]),
                      radii=np.array([.020,.006,.006,.006]),margin=.003,
@@ -24,32 +25,32 @@ def source_model():
 
 
 def gui_to_math(q_deg, base_angle_deg=90.):
-    return np.deg2rad([base_angle_deg-90., *q_deg])
+    return np.deg2rad([base_angle_deg, *q_deg])
 
 
 def planar_position(q_deg):
     """Distance/height in mm, same mathematical convention as supplied GUI."""
-    return 1000*position(source_model(), gui_to_math(q_deg))[[0,2]]
+    return 1000*position(source_model(), gui_to_math(q_deg,0.))[[0,2]]
 
 
 def planar_jacobian(q_deg, method='partial'):
     """2x3, mm/rad, exactly the task/units of the instructor Jacobian."""
-    J=jacobian(source_model(), gui_to_math(q_deg), method)
+    J=jacobian(source_model(), gui_to_math(q_deg,0.), method)
     return 1000*J[[0,2],1:]
 
 
 def xyz_from_gui_target(base_angle_deg, distance_mm, height_mm):
-    b=np.deg2rad(base_angle_deg-90.)
+    b=np.deg2rad(base_angle_deg)
     return np.array([distance_mm*np.cos(b), distance_mm*np.sin(b), height_mm])/1000
 
 
 def run_demo(target_mm=None, plot=False):
-    m=source_model(); q_goal=np.deg2rad([20,70,-80,-40])
+    m=source_model(); q_goal=np.deg2rad([110,70,-80,-40])
     target=position(m,q_goal) if target_mm is None else np.asarray(target_mm)/1000
     q,r=solve(m,target)
     print('Instructor dimensions; SIMULATION limits, no hardware connection')
     print('Target XYZ (mm):',target*1000)
-    print('Base GUI angle (deg):',90+np.rad2deg(q[0]))
+    print('Base angle (deg):',np.rad2deg(q[0]))
     print('Arm/forearm/wrist q (deg):',np.rad2deg(q[1:]))
     print(r['status'],'residual (mm):',r['error']*1000)
     if plot:

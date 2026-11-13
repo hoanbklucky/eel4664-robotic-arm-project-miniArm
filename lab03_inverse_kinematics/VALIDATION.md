@@ -6,7 +6,7 @@ NumPy reference, Python 3.12 on Windows:
 
 ```text
 python -m unittest discover -s python -v
-Ran 15 tests ... OK
+Ran 16 tests ... OK
 ```
 
 Coverage:
@@ -38,7 +38,8 @@ position-only IK of this four-joint chain is redundant.
 ## Provided but not executed in this environment
 
 The source-model command-line demonstration also converged to residual
-0.006306 mm for XYZ [126.4138053,46.01086233,97.29949248] mm. GUI animation was
+0.006306 mm for XYZ [-46.01086233,126.4138053,97.29949248] mm in the current
+x-right/y-forward frame. GUI animation was
 not rendered here because matplotlib is not installed in this Python runtime;
 install the provided requirements to run `--plot` locally.
 
@@ -69,3 +70,13 @@ between clear endpoints, safe goal paths and collision configuration validation.
 The source-model default still converges with collision checks enabled. MATLAB
 collision regressions are provided in `verify_collision.m` but were not run here.
 Provisional radii must be measured before interpreting this as a physical model.
+
+## Latest instructor model and frame convention
+
+The supplied `miniarm_model.m` numerics are preserved: first-row angular offset
+zero, base limits [0,180] degrees, q0=[90,60,-60,-60] degrees, and
+demoGoal=[110,70,-80,-40] degrees. Its leftover base_angle-90 comment was corrected.
+The Python model and miniArm/collision regressions now use the same convention.
+A cross-language configuration test reads the MATLAB table, limits and poses
+and compares them with the NumPy reference, to catch inconsistent updates.
+The original Python audit remains a historical test of the uploaded code.

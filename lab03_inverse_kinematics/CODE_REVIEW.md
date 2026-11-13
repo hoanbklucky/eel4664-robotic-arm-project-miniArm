@@ -1,5 +1,11 @@
 # Review of the instructor's miniArm code
 
+**Historical source review:** numerical results below describe the original
+uploaded Python GUI/IK convention. The current simulation now uses the latest
+instructor model with base 0..180 degrees and x right/y forward/z up. See the
+[current MATLAB guide](matlab/README.md); do not apply the original GUI's -90
+degree yaw shift to the current model.
+
 ## Main finding
 
 The supplied `miniarm_ik.py` correctly implements Craig modified-DH FK, the
@@ -58,7 +64,7 @@ All three IK tests started at (60,-60,-60) degrees. These goals were generated
 from known model poses. They demonstrate convergence for these cases, not all
 targets or seeds. Run `audit_original.py` against your local file to reproduce.
 
-## Planar target versus XYZ target
+## Original GUI planar target versus its original XYZ frame
 
 Your 2x3 Jacobian is sufficient when the user specifies base angle, distance and
 height separately. With b = base_angle - 90 degrees, XYZ is:
@@ -72,6 +78,10 @@ To convert an ordinary XYZ target with nonnegative radial distance, set
 the base's calibrated range. At x=y=0, keep a chosen/current base heading; yaw
 is not determined by XYZ. Signed negative distance can represent a different
 configuration branch and must be handled deliberately.
+
+In the **current** simulation, instead use b=base_angle directly, with x right
+and y forward. Its coordinate conversion is `x=d*cos(b)`, `y=d*sin(b)`, `z=h`.
+Converting an old GUI XYZ point uses `x_new=-y_old`, `y_new=x_old`, `z_new=z_old`.
 
 The supplied simulation also offers full XYZ IK using a 3x4 Jacobian. This
 does not mean your existing 2x3 formulation was missing a row: it solves a

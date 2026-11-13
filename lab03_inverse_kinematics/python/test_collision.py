@@ -20,14 +20,14 @@ class CollisionTests(unittest.TestCase):
             self.assertAlmostEqual(segment_distance(C,D,A,B),expected)
 
     def test_base_intersection_rejected_even_at_zero_position_error(self):
-        m=source_model(); q=np.deg2rad([0,100,-120,-120])
+        m=source_model(); q=np.deg2rad([90,100,-120,-120])
         distance,pair=clearance(m,q)
         self.assertLess(distance,0); self.assertEqual(pair,'base / tool')
         _,r=solve(m,position(m,q),q0=q)
         self.assertFalse(r['success']); self.assertEqual(r['status'],'seed_in_collision')
 
     def test_regression_old_solver_converges_into_base(self):
-        m=source_model(); target=position(m,np.deg2rad([0,120,-100,-120]))
+        m=source_model(); target=position(m,np.deg2rad([90,120,-100,-120]))
         old=source_model(); old.collision=None
         old_q,old_r=solve(old,target)
         self.assertTrue(old_r['success']); self.assertLess(clearance(m,old_q)[0],0)
@@ -41,13 +41,13 @@ class CollisionTests(unittest.TestCase):
         # Isolate table so this regression specifically tests interpolation.
         m.collision['pairs']=np.empty((0,2),dtype=int)
         m.collision['floor_edges']=[3]
-        a=np.deg2rad([0,30,-120,-160]); b=np.deg2rad([0,30,-120,160])
+        a=np.deg2rad([90,30,-120,-160]); b=np.deg2rad([90,30,-120,160])
         self.assertGreater(clearance(m,a)[0],0); self.assertGreater(clearance(m,b)[0],0)
         self.assertLess(clearance(m,(a+b)/2)[0],0)
         self.assertFalse(edge_clear(m,a,b))
 
     def test_safe_goal_paths_and_yaw_invariance(self):
-        m=source_model(); target=position(m,np.deg2rad([20,70,-80,-40]))
+        m=source_model(); target=position(m,np.deg2rad([110,70,-80,-40]))
         for method in ('partial','finite'):
             q,r=solve(m,target,method=method)
             self.assertTrue(r['success']); self.assertGreater(r['clearance'],0)

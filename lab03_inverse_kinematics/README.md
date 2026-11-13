@@ -1,5 +1,9 @@
 # Lab 03 — Craig DH, Jacobian and Numerical Position IK
 
+**New to the code? Read the [MATLAB file-by-file guide](matlab/README.md)** for
+the role of all nine `.m` files, DH frames, transformation matrices, FK,
+Jacobian methods, numerical IK, collision checks and runnable inspection commands.
+
 **Start with MATLAB.** This lab implements your own forward kinematics, two
 position Jacobians and damped numerical IK, then animates the result. The core
 MATLAB code needs **base MATLAB only**. MathWorks Robotics System Toolbox is an
@@ -131,11 +135,14 @@ Edit `miniarm_model.m`:
    a label only; it does not enable hardware motion. It remains true initially
    because the physical limits/calibration are not supplied.
 
-The MATLAB vector is `[baseYaw; arm; forearm; wrist]` in radians. In the supplied
-GUI, `base_angle = 90 + rad2deg(baseYaw)` and its three-element q is
-`rad2deg([arm; forearm; wrist])`. The GUI's Distance/Height are millimetres;
-MATLAB XYZ inputs are metres. Do not pass GUI q or millimetres directly into
-the SI-unit solver.
+The current MATLAB/Python simulation vector is
+`[base_angle; shoulder; elbow; wrist]` in radians. Frame {0} is **x right,
+y forward, z up**, viewed from behind at the Arduino/knobs. Base angle 0 means
+right, 90 forward and 180 left; no -90 degree offset is applied. The original
+uploaded GUI used x forward/y left, so its old XYZ converts as
+`x_new=-y_old`, `y_new=x_old`, `z_new=z_old`. Its planar Distance/Height still
+have the same physical meaning. MATLAB XYZ inputs are metres; the original
+GUI uses millimetres/degrees. Convert units and frames explicitly.
 
 FK is `T = base*A1*...*An*tool`; position is `T(1:3,4)` in the same frame as the
 target. All revolute joints are rotations about their Craig z_i axes. Avoid

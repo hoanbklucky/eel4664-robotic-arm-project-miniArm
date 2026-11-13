@@ -1,9 +1,11 @@
 function verify_miniarm()
 % Source-model checks: instructor dimensions, positive shoulder twist.
 m=miniarm_model(); MiniArmIK.validate(m);
-assert(norm(MiniArmIK.fk(m,deg2rad([0;90;0;0]))-[0;0;.323])<1e-12);
+% Base 0 right, 90 forward, 180 left; no base angular offset.
+assert(norm(MiniArmIK.fk(m,deg2rad([90;90;0;0]))-[0;0;.323])<1e-12);
 assert(norm(MiniArmIK.fk(m,[0;0;0;0])-[.203;0;.120])<1e-12);
 assert(norm(MiniArmIK.fk(m,deg2rad([90;0;0;0]))-[0;.203;.120])<1e-12);
+assert(norm(MiniArmIK.fk(m,deg2rad([180;0;0;0]))-[-.203;0;.120])<1e-12);
 rng(4664); worst=0;
 for k=1:100
     q=m.limits(:,1)+rand(4,1).*(m.limits(:,2)-m.limits(:,1));
