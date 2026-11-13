@@ -1,5 +1,9 @@
 # MATLAB code guide: from DH parameters to inverse kinematics
 
+**See the [instructor screenshots and expected output](EXPECTED_OUTPUT.md)**
+for successful MATLAB Online runs, the convergence plot and the optional toolbox
+frame display, with captions explaining what to compare with your own result.
+
 This guide follows the latest instructor `miniarm_model.m`. The main task is
 **3D XYZ position IK with four revolute joints, free claw pitch, joint limits
 and approximate collision checks**. Core calculations use base MATLAB.

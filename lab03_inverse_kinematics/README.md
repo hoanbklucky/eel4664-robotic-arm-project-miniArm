@@ -8,6 +8,14 @@ including the candidate joint update, conditional acceptance and next iteration.
 For the mathematics behind the Jacobian loop, see the
 [worked partial-derivative explanation](matlab/JACOBIAN_WALKTHROUGH.md).
 
+**What should students see?** See the
+[instructor screenshots and expected results](matlab/EXPECTED_OUTPUT.md).
+
+![Instructor example of a converged IK simulation and decreasing position error](matlab/images/ik_convergence_closeup.png)
+
+*Example successful run. Your valid posture, iteration count and camera angle
+may differ; use the residual, limits and clearance checks to assess the result.*
+
 **Start with MATLAB.** This lab implements your own forward kinematics, two
 position Jacobians and damped numerical IK, then animates the result. The core
 MATLAB code needs **base MATLAB only**. MathWorks Robotics System Toolbox is an
