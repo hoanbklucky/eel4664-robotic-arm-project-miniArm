@@ -12,5 +12,15 @@ m.q0 = deg2rad([0;60;-60;-60]);
 m.demoGoal = deg2rad([20;70;-80;-40]);
 m.exampleOnly = true; % keeps export guarded until limits/calibration verified
 m.label = 'Instructor miniArm geometry; uncalibrated simulation limits';
+% Optional collision approximation. FK columns: table, shoulder, shoulder,
+% elbow, wrist, TCP. Capsules: base, upper arm, forearm, tool.
+% Radii/margin are PROVISIONAL simulation values: measure your actual robot.
+m.collision.edges = [1 2; 3 4; 4 5; 5 6];
+m.collision.radii = [.020 .006 .006 .006];
+m.collision.pairs = [1 3; 1 4; 2 4]; % exclude connected neighbouring links
+m.collision.names = {'base','upper arm','forearm','tool'};
+m.collision.margin = .003;
+m.collision.floorEdges = [2 3 4];
+m.collision.floorZ = 0;
 % Only set false after replacing geometry AND limits with your measurements.
 end

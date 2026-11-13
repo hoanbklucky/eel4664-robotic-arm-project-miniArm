@@ -8,6 +8,9 @@ end
 target=target(:);
 [q,r]=MiniArmIK.solve(m,target,m.q0,'partial');
 fprintf('%s: residual %.6f m, %d updates\n',r.status,r.error,r.iterations);
+if isfinite(r.clearance)
+    fprintf('Minimum modeled clearance %.2f mm (%s)\n',1000*r.clearance,r.contact);
+end
 disp(table((1:numel(q))',q,rad2deg(q),'VariableNames',{'Joint','Radians','Degrees'}));
 figure('Name','Craig MDH position IK');
 subplot(1,2,1); ax=gca;
@@ -20,9 +23,11 @@ for k=1:size(r.history,2)
     centre=m.base(1:3,4); xlim(ax,centre(1)+[-reach reach]);
     ylim(ax,centre(2)+[-reach reach]); zlim(ax,centre(3)+[-reach reach]);
     xlabel(ax,'x (m)'); ylabel(ax,'y (m)'); zlabel(ax,'z (m)');
-    title(ax,sprintf('Solver update %d (not elapsed time)',k-1)); drawnow;
+    title(ax,sprintf('%s: update %d (not time)',r.status,k-1),'Interpreter','none'); drawnow;
 end
 subplot(1,2,2); semilogy(0:r.iterations,max(r.errors,eps),'o-');
 xlabel('Solver update'); ylabel('Position error (m)'); grid on;
-if ~r.success, warning('No solution found: do not command hardware.'); end
+if ~r.success
+    warning('No collision-free solution found from this seed: final pose is NOT a valid target solution.');
+end
 end

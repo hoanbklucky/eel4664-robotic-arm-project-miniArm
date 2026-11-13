@@ -2,6 +2,7 @@ classdef MiniArmIK
 % Position-only IK for an all-revolute Craig modified-DH chain.
 methods(Static)
 function validate(m)
+    MiniArmCollision.validate(m);
     n = size(m.mdh,1);
     assert(n > 0 && size(m.mdh,2)==4 && all(isfinite(m.mdh(:))), 'Invalid MDH table');
     assert(isequal(size(m.limits),[n 2]) && all(isfinite(m.limits(:))) && ...
@@ -66,6 +67,12 @@ function [q,r] = solve(m,target,q0,method)
     tol=1e-4; lambda=.01; maxStep=.10; maxIter=400;
     r.history=q; r.errors=norm(target-MiniArmIK.fk(m,q));
     r.status='max_iterations';
+    [r.clearance,r.contact]=MiniArmCollision.clearance(m,q);
+    if r.clearance<=0
+        r.status='seed_in_collision'; r.error=r.errors(1); r.success=false; r.iterations=0;
+        return;
+    end
+    blocked=false;
     for k=1:maxIter
         e=target-MiniArmIK.fk(m,q);
         if norm(e)<=tol, r.status='converged'; break; end
@@ -77,14 +84,21 @@ function [q,r] = solve(m,target,q0,method)
         for ls=0:15
             trial=min(max(q+(.5^ls)*dq,m.limits(:,1)),m.limits(:,2));
             if norm(target-MiniArmIK.fk(m,trial)) < norm(e)-1e-12
-                q=trial; accepted=true; break;
+                if MiniArmCollision.edgeClear(m,q,trial)
+                    q=trial; accepted=true; break;
+                end
+                blocked=true;
             end
         end
-        if ~accepted, r.status='stalled'; break; end
+        if ~accepted
+            if blocked, r.status='stalled_or_collision'; else, r.status='stalled'; end
+            break;
+        end
         r.history(:,end+1)=q; r.errors(end+1)=norm(target-MiniArmIK.fk(m,q));
     end
     r.error=norm(target-MiniArmIK.fk(m,q));
-    r.success=r.error<=tol;
+    [r.clearance,r.contact]=MiniArmCollision.clearance(m,q);
+    r.success=r.error<=tol && r.clearance>0;
     if r.success, r.status='converged'; end
     r.iterations=size(r.history,2)-1;
 end

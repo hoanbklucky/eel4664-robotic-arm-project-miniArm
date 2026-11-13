@@ -6,7 +6,7 @@ NumPy reference, Python 3.12 on Windows:
 
 ```text
 python -m unittest discover -s python -v
-Ran 9 tests ... OK
+Ran 15 tests ... OK
 ```
 
 Coverage:
@@ -59,3 +59,13 @@ its planar Jacobian formula with the generic MDH implementation. Hardware FK
 accuracy, actual joint/servo limits, servo IDs,
 pin mapping, serial firmware, contact/collision behavior, motor dynamics and
 physical reaching accuracy have not been tested. No Webots world is included.
+
+## Collision revision
+
+See COLLISIONS.md for the reproduced old-solver base intersection and the new
+capsule/path checks. Six additional Python tests cover capsule segment distance,
+colliding initial poses, old-versus-new base intersection, an unsafe interpolation
+between clear endpoints, safe goal paths and collision configuration validation.
+The source-model default still converges with collision checks enabled. MATLAB
+collision regressions are provided in `verify_collision.m` but were not run here.
+Provisional radii must be measured before interpreting this as a physical model.

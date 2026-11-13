@@ -11,8 +11,11 @@ class Model:
     limits: np.ndarray
     q0: np.ndarray
     example_only: bool = True
+    collision: dict | None = None
 
     def validate(self):
+        from collision import validate_collision
+        validate_collision(self)
         n = len(self.mdh)
         if self.mdh.shape != (n, 4) or n == 0 or not np.isfinite(self.mdh).all():
             raise ValueError('Invalid MDH table')
@@ -94,6 +97,13 @@ def solve(m, target, q0=None, method='partial'):
     q = m.check_q(m.q0 if q0 is None else q0, limits=True).copy()
     history = [q.copy()]; errors = [float(np.linalg.norm(target-position(m, q)))]
     status = 'max_iterations'
+    from collision import clearance, edge_clear
+    initial_clearance,initial_contact=clearance(m,q)
+    if initial_clearance<=0:
+        return q,dict(success=False,status='seed_in_collision',error=errors[0],
+                      history=np.array(history),errors=np.array(errors),
+                      clearance=initial_clearance,contact=initial_contact)
+    blocked=False
     for _ in range(400):
         e = target-position(m, q)
         if np.linalg.norm(e) <= 1e-4:
@@ -106,14 +116,18 @@ def solve(m, target, q0=None, method='partial'):
             trial = np.clip(q + .5**ls*dq, m.limits[:, 0], m.limits[:, 1])
             err = float(np.linalg.norm(target-position(m, trial)))
             if err < np.linalg.norm(e)-1e-12:
-                q = trial; accepted = True; break
+                if edge_clear(m,q,trial):
+                    q = trial; accepted = True; break
+                blocked=True
         if not accepted:
-            status = 'stalled'; break
+            status = 'stalled_or_collision' if blocked else 'stalled'; break
         history.append(q.copy()); errors.append(err)
     error = float(np.linalg.norm(target-position(m, q)))
-    success = error <= 1e-4
+    final_clearance,contact=clearance(m,q)
+    success = error <= 1e-4 and final_clearance>0
     return q, dict(success=success, status='converged' if success else status,
-                   error=error, history=np.array(history), errors=np.array(errors))
+                   error=error, history=np.array(history), errors=np.array(errors),
+                   clearance=final_clearance,contact=contact)
 
 
 if __name__ == '__main__':

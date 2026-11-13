@@ -11,10 +11,16 @@ GEOMETRY = dict(H=120., L1=56.5, L2=61.5, L3=85.)
 
 def source_model():
     tool=np.eye(4); tool[0,3]=.085
-    return Model(np.array([[0,0,.120,0],[0,np.pi/2,0,0],
+    m=Model(np.array([[0,0,.120,0],[0,np.pi/2,0,0],
                            [.0565,0,0,0],[.0615,0,0,0]]), np.eye(4), tool,
                  np.deg2rad([[-90,90],[0,180],[-160,160],[-160,160]]),
                  np.deg2rad([0,60,-60,-60]), example_only=True)
+    # Provisional capsule radii: measure actual link/gripper/base envelopes.
+    m.collision=dict(edges=np.array([[0,1],[2,3],[3,4],[4,5]]),
+                     radii=np.array([.020,.006,.006,.006]),margin=.003,
+                     pairs=np.array([[0,2],[0,3],[1,3]]),floor_edges=[1,2,3],
+                     floor_z=0.,names=['base','upper arm','forearm','tool'])
+    return m
 
 
 def gui_to_math(q_deg, base_angle_deg=90.):

@@ -25,6 +25,9 @@ model remains only as a regression fixture in `miniarm_example_model.m`.
 Recommendation for this course: **MATLAB kinematics first → measured model and
 calibration → slow hardware trials → Webots for vision/contact tasks if needed.**
 A kinematic animation establishes no collision or motor-torque guarantee.
+The default miniArm model now includes configurable capsule collision checks;
+see [collision handling](COLLISIONS.md). These are approximations, not measured
+CAD geometry or a hardware safety guarantee.
 “MATLAB Robotics System Toolbox” (MathWorks) and Peter Corke's “Robotics Toolbox
 for MATLAB” are separate products. These scripts use neither Corke's API nor its
 standard-DH defaults. The optional check uses MathWorks `rigidBodyTree`.
@@ -39,6 +42,8 @@ standard-DH defaults. The optional check uses MathWorks `rigidBodyTree`.
 | `matlab/demo_ik.m` | XYZ input, numerical solve, animation and error plot |
 | `matlab/verify_ik.m` | Closed-form, Jacobian, IK and failure checks |
 | `matlab/verify_miniarm.m` | Instructor geometry, angle signs and planar Jacobian checks |
+| `matlab/MiniArmCollision.m` | Capsule clearance, table checks and joint-interpolation checking |
+| `matlab/verify_collision.m` | Base/tool collision and intervening-path regressions |
 | `matlab/verify_toolbox.m` | Optional MathWorks FK/Jacobian comparison |
 | `python/kinematics.py` | Equivalent runnable NumPy implementation and plotting CLI |
 | `python/test_kinematics.py` | Independent closed-form checks and regression tests |
@@ -53,6 +58,7 @@ Clone/download the repository. In MATLAB set the current folder to
 ```matlab
 verify_ik
 verify_miniarm
+verify_collision
 demo_ik
 demo_ik([0.20; 0.04; 0.10])  % arbitrary XYZ target, metres
 ```
@@ -215,7 +221,10 @@ At each iteration:
    this metre/radian model (same numerical scale as Jacobian singular values).
    Reconsider damping if you change units or arm scale.
 4. Limit the total update norm to 0.10 rad, project candidate q into joint limits,
-   and backtrack until the actual nonlinear position error decreases.
+   and backtrack until the actual nonlinear position error decreases. If a
+   collision model is configured, also require its clearance constraints along
+   the straight joint interpolation to the trial pose. A colliding seed fails
+   immediately, even if its position error is zero.
 5. Stop at residual ≤1e-4 m, stalled descent, or 400 updates.
 
 The 0.1 mm tolerance is an algorithm demonstration, not a promised hardware

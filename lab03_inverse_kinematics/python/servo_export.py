@@ -16,10 +16,13 @@ class Calibration:
 
 
 def export_solution(path, model, target, q, result, calibration):
+    from collision import clearance
     model.validate()
     if model.example_only:
         raise ValueError('Replace example geometry/limits before servo export')
     q = model.check_q(q, limits=True)
+    if clearance(model,q)[0]<=0:
+        raise ValueError('Solution violates configured collision clearance')
     target = np.asarray(target, dtype=float)
     if (target.shape != (3,) or not np.isfinite(target).all()
             or not result.get('success', False)
