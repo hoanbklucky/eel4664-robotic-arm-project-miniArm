@@ -10,7 +10,7 @@ Five progressive laboratory activities for the Hiwonder miniArm with Arduino Uno
 | 03 | MATLAB simulation, Craig DH, Jacobians and numerical IK | [lab03_inverse_kinematics](lab03_inverse_kinematics/README.md) |
 | 04 | Rubber-duck detection, camera calibration, IK and pick/place | [lab04_vision_guided_pick_place](lab04_vision_guided_pick_place/README.md) |
 
-**Implementation note:** Labs 00–02 use manufacturer workflows. Lab 03 now includes MATLAB simulation code and a tested NumPy reference; its dimensions are illustrative until replaced with a measured miniArm DH model. Lab 04 remains an implementation plan. Custom serial firmware, robot calibration, and camera integration require bench testing before classroom deployment. The front-mounted camera moves with the arm, so Lab 04 begins at a repeatable observation pose.
+**Implementation note:** Labs 00–02 use manufacturer workflows. Lab 03 now includes MATLAB simulation code and a tested NumPy reference; its default model now follows the instructor's supplied miniArm geometry, with physical limits and calibration still requiring verification. Lab 04 remains an implementation plan. Custom serial firmware, robot calibration, and camera integration require bench testing before classroom deployment. The front-mounted camera moves with the arm, so Lab 04 begins at a repeatable observation pose.
 
 ---
 

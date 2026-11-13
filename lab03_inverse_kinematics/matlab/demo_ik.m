@@ -1,9 +1,9 @@
 function demo_ik(target)
 % Run demo_ik or demo_ik([0.20;0.04;0.10]); no add-on required.
 m=miniarm_model(); MiniArmIK.validate(m);
-if m.exampleOnly, warning('Illustrative geometry: NOT a calibrated miniArm'); end
+if m.exampleOnly, warning('Geometry/limits require hardware validation before motion'); end
 if nargin==0
-    target=MiniArmIK.fk(m,[.35;-.8;1.2;-.2]); % known reachable example
+    target=MiniArmIK.fk(m,m.demoGoal); % known reachable under simulation limits
 end
 target=target(:);
 [q,r]=MiniArmIK.solve(m,target,m.q0,'partial');

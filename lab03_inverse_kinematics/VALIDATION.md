@@ -6,7 +6,7 @@ NumPy reference, Python 3.12 on Windows:
 
 ```text
 python -m unittest discover -s python -v
-Ran 6 tests ... OK
+Ran 9 tests ... OK
 ```
 
 Coverage:
@@ -37,6 +37,11 @@ position-only IK of this four-joint chain is redundant.
 
 ## Provided but not executed in this environment
 
+The source-model command-line demonstration also converged to residual
+0.006306 mm for XYZ [126.4138053,46.01086233,97.29949248] mm. GUI animation was
+not rendered here because matplotlib is not installed in this Python runtime;
+install the provided requirements to run `--plot` locally.
+
 MATLAB and Robotics System Toolbox were unavailable. `verify_ik.m` and
 `verify_toolbox.m` are provided for local execution; no MATLAB runtime or
 toolbox pass is claimed. The MATLAB implementation follows the same equations
@@ -47,8 +52,10 @@ remains useful after you edit `miniarm_model`.
 
 ## Not established by these checks
 
-The instructor's current IK implementation could not be audited because its
-source/attachment was not available. The example geometry is not measured
-miniArm geometry. Hardware FK accuracy, actual joint/servo limits, servo IDs,
+The instructor's supplied `miniarm_ik.py` has now been executed in memory and
+audited with `python/audit_original.py`; see CODE_REVIEW.md for numerical results.
+Three additional regression tests exercise the instructor geometry and compare
+its planar Jacobian formula with the generic MDH implementation. Hardware FK
+accuracy, actual joint/servo limits, servo IDs,
 pin mapping, serial firmware, contact/collision behavior, motor dynamics and
 physical reaching accuracy have not been tested. No Webots world is included.

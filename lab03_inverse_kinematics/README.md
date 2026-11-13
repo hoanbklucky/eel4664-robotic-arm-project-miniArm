@@ -5,12 +5,12 @@ position Jacobians and damped numerical IK, then animates the result. The core
 MATLAB code needs **base MATLAB only**. MathWorks Robotics System Toolbox is an
 optional independent cross-check. A runnable NumPy reference is also included.
 
-**Model status:** the repository previously contained an implementation plan,
-not executable IK. No instructor DH table, frame drawing or prior IK source was
-available for this revision. The supplied four-joint geometry is an explicitly
-illustrative yaw/pitch chain, **not a measured Hiwonder miniArm digital twin**.
-Replace it with your own Craig table before interpreting results as miniArm
-positions. No pin assignments or servo calibration are assumed.
+**Model status:** the default simulation now follows the instructor's supplied
+`miniarm_ik.py` and geometry: H=120, L1=56.5, L2=61.5, L3=85 mm, with a **+90°**
+shoulder twist. The original analytic Jacobian and numerical IK were executed
+and checked; see [the code review](CODE_REVIEW.md). Physical calibration and
+joint limits still require verification on your own arm. The earlier generic
+model remains only as a regression fixture in `miniarm_example_model.m`.
 
 ## 1. MATLAB or Webots?
 
@@ -38,9 +38,12 @@ standard-DH defaults. The optional check uses MathWorks `rigidBodyTree`.
 | `matlab/MiniArmIK.m` | FK, exact partial derivatives, finite differences, damped IK |
 | `matlab/demo_ik.m` | XYZ input, numerical solve, animation and error plot |
 | `matlab/verify_ik.m` | Closed-form, Jacobian, IK and failure checks |
+| `matlab/verify_miniarm.m` | Instructor geometry, angle signs and planar Jacobian checks |
 | `matlab/verify_toolbox.m` | Optional MathWorks FK/Jacobian comparison |
 | `python/kinematics.py` | Equivalent runnable NumPy implementation and plotting CLI |
 | `python/test_kinematics.py` | Independent closed-form checks and regression tests |
+| `python/miniarm_source_model.py` | Instructor geometry, GUI angle/unit adapters and animated simulation |
+| `python/audit_original.py` | Run FK/Jacobian/IK checks on your original local `miniarm_ik.py` |
 | `python/servo_export.py` | Calibrated conversion to servo degrees; exports only |
 | `VALIDATION.md` | What was actually run and what remains to be checked |
 
@@ -49,6 +52,7 @@ Clone/download the repository. In MATLAB set the current folder to
 
 ```matlab
 verify_ik
+verify_miniarm
 demo_ik
 demo_ik([0.20; 0.04; 0.10])  % arbitrary XYZ target, metres
 ```
@@ -66,11 +70,13 @@ py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r python/requirements.txt
 python -m unittest discover -s python -v
-python python/kinematics.py --plot
-python python/kinematics.py --target 0.20 0.04 0.10 --method finite --plot
+python python/miniarm_source_model.py --plot
+python python/miniarm_source_model.py --target-mm 100 40 150 --plot
+python python/audit_original.py path/to/your/miniarm_ik.py
 ```
 
-MATLAB and Python have separate model constructors. In Python keep
+MATLAB and Python have separate model constructors. Edit `source_model()` in
+`python/miniarm_source_model.py` to change the instructor-source model. Keep
 `example_model()` as a fixed regression fixture and create a separate measured
 `Model(...)` instance for your application. If using both, enter the same
 measured table, tool transform and limits in both. They do not automatically
@@ -114,9 +120,16 @@ Edit `miniarm_model.m`:
    specified opening. An omitted tool offset can make an otherwise correct
    Jacobian and IK solve for the wrong point.
 5. Enter experimentally verified mathematical joint limits and a bent seed pose
-   inside them. Example ±144 degree limits are not miniArm hardware limits.
-6. After replacing geometry and limits, change `exampleOnly` to false. This is
-   a label only; it does not enable hardware motion.
+   inside them. The default simulation ranges are not calibrated hardware limits.
+6. After verifying geometry and replacing limits, change `exampleOnly` to false. This is
+   a label only; it does not enable hardware motion. It remains true initially
+   because the physical limits/calibration are not supplied.
+
+The MATLAB vector is `[baseYaw; arm; forearm; wrist]` in radians. In the supplied
+GUI, `base_angle = 90 + rad2deg(baseYaw)` and its three-element q is
+`rad2deg([arm; forearm; wrist])`. The GUI's Distance/Height are millimetres;
+MATLAB XYZ inputs are metres. Do not pass GUI q or millimetres directly into
+the SI-unit solver.
 
 FK is `T = base*A1*...*An*tool`; position is `T(1:3,4)` in the same frame as the
 target. All revolute joints are rotations about their Craig z_i axes. Avoid
