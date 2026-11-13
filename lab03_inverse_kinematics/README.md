@@ -1,3 +1,10 @@
+> **Complete student workflow:** [3D IK lab instructions](STUDENT_GUIDE.md) cover
+> MATLAB verification, Python XYZ preview, calibration, Arduino execution and
+> the required [report template](Lab03_Report_Template.docx).
+> Start the GUI with `python miniarm_controlC.py --simulate` from
+> `miniarm_controlC`; keep the sibling `python` folder. The guide below remains
+> the detailed simulation reference. Historical planar-code reviews describe
+> the older GUI, not the current XYZ interface.
 # Lab 03 — Craig DH, Jacobian and Numerical Position IK
 
 **New to the code? Read the [MATLAB file-by-file guide](matlab/README.md)** for
@@ -376,3 +383,4 @@ provides the requested first simulation with much less setup.
 - [MathWorks: rigidBodyTree](https://www.mathworks.com/help/robotics/ref/rigidbodytree.html)
 - [Cyberbotics: Introduction to Webots](https://cyberbotics.com/doc/guide/introduction-to-webots)
 - [Cyberbotics: Physics nodes](https://cyberbotics.com/doc/reference/physics)
+

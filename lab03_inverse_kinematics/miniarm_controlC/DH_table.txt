@@ -1,0 +1,14 @@
+Team: __________________  Arm: __________________
+Craig modified DH: Rx(alpha_previous) Tx(a_previous) Rz(q_i+offset_i) Tz(d_i)
+World axes, viewed from behind at Arduino/knobs: X right, Y forward, Z up.
+Joint order: base, shoulder, elbow, wrist. Base 90 degrees = forward.
+Lengths in mm for this written table; angles in degrees.
+
+Joint     a_previous   alpha_previous   d_i    theta_offset
+Base      _________    ______________   ____   ____________
+Shoulder  _________    ______________   ____   ____________
+Elbow     _________    ______________   ____   ____________
+Wrist     _________    ______________   ____   ____________
+
+Fixed wrist-to-tool transform and measured length: ______________________
+Attach a drawing of frames {0} through {4} and {T}, including all axes.
