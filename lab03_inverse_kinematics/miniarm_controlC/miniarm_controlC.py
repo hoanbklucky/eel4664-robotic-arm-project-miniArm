@@ -61,6 +61,45 @@ MODES = {   # code sent to the Arduino: (button text, color)
     "I": ("IK CONTROL", "#1c7ed6"),
 }
 
+# Camera locations in the SAME world frame as FK: X right, Y forward, Z up.
+# Rear means the Arduino/knob side (negative Y). These are views, not new frames.
+PREVIEW_CAMERAS = {
+    'Rear right (Arduino side)': (1., -1., .8),
+    'Rear (Arduino side)': (0., -1., .7),
+    'Top': (0., 0., 1.),
+    'Right side': (1., 0., 0.),
+}
+
+
+def preview_camera_basis(view):
+    """Orthonormal screen-right/up vectors and the camera's world direction.
+
+    right cross up = camera. In particular the default camera is ABOVE the
+    table; the former hard-coded projection had a negative camera Z component.
+    Screen pixel Y increases down, so projection negates the up component.
+    """
+    camera=np.array(PREVIEW_CAMERAS[view],dtype=float)
+    camera/=np.linalg.norm(camera)
+    reference_up=np.array([0.,1.,0.]) if view=='Top' else np.array([0.,0.,1.])
+    right=np.cross(reference_up,camera); right/=np.linalg.norm(right)
+    up=np.cross(camera,right)
+    return right,up,camera
+
+
+def fit_preview_projection(points,view,viewport):
+    """Fit world points (mm) into a canvas rectangle with ONE uniform scale."""
+    right,up,_=preview_camera_basis(view)
+    points=np.asarray(points,dtype=float)
+    projected=np.column_stack((points@right,-points@up))
+    low=projected.min(axis=0); high=projected.max(axis=0)
+    x0,y0,x1,y1=viewport
+    scale=min((x1-x0)/max(high[0]-low[0],1.),(y1-y0)/max(high[1]-low[1],1.))
+    offset=np.array([(x0+x1)/2,(y0+y1)/2])-scale*(low+high)/2
+    def project(p):
+        p=np.asarray(p,dtype=float)
+        return tuple(offset+scale*np.array([p@right,-p@up]))
+    return project
+
 
 def calibration_path():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), CALIBRATION_FILE)
@@ -209,6 +248,7 @@ class ArmApp:
         self.mode='A'; self.positions=[90]*5; self.commanded=[90]*5
         self.initialized=False; self.busy=False; self.pending=None
         self.preview=None; self.plan=[]; self.active=None; self.started=0
+        self._preview_plot=None
         self.knobs=None; self.knob_baseline=None; self.synthetic=False
         try: self.cal=mc.Calibration.load(calibration_path())
         except mc.CalibrationError: self.cal=None
@@ -263,7 +303,15 @@ class ArmApp:
         tk.Button(actions,text='Save experiment log',command=self.save_log).pack(side='left',padx=4)
         self.readout=tk.StringVar(value='Position estimate: not initialized')
         tk.Label(self.root,textvariable=self.readout,font=('Consolas',9)).pack(pady=5)
-        self.canvas=tk.Canvas(self.root,width=750,height=250,bg='white'); self.canvas.pack(padx=10)
+        views=tk.Frame(self.root); views.pack(fill='x',padx=12)
+        tk.Label(views,text='Preview camera:').pack(side='left')
+        self.preview_view=tk.StringVar(value='Rear right (Arduino side)')
+        tk.OptionMenu(views,self.preview_view,*PREVIEW_CAMERAS,
+                      command=lambda _:self.redraw_preview()).pack(side='left')
+        tk.Label(views,text='Changing the camera does not move the arm.').pack(side='left',padx=10)
+        self.canvas=tk.Canvas(self.root,width=840,height=340,bg='white')
+        self.canvas.pack(padx=10,fill='both',expand=True)
+        self.canvas.bind('<Configure>',lambda _:self.redraw_preview())
         self.terminal=scrolledtext.ScrolledText(self.root,width=100,height=9,state='disabled',font=('Consolas',9))
         self.terminal.pack(padx=10,pady=8)
         self.draw()
@@ -291,6 +339,8 @@ class ArmApp:
 
     def invalidate(self):
         self.preview=None; self.move_button.config(state='disabled')
+        self._preview_plot=None
+        if hasattr(self,'canvas'): self.draw()
 
     def set_mode(self,mode):
         if self.busy:
@@ -373,11 +423,12 @@ class ArmApp:
         if self.cal:
             q=ik.servo_to_q(self.cal,self.positions)
             xyz=ik.position(self.m,q)*1000
-            self.readout.set('Estimated XYZ mm: '+np.array2string(xyz,precision=1)+
-                ' | base/shoulder/elbow/wrist deg: '+np.array2string(np.rad2deg(q),precision=1))
+            self.readout.set('Current estimate XYZ mm: '+np.array2string(xyz,precision=1,suppress_small=True)+
+                ' | base/shoulder/elbow/wrist deg: '+np.array2string(np.rad2deg(q),precision=1,suppress_small=True))
         else: self.readout.set('Raw S1..S5: '+str(self.positions)+' | calibration needed for XYZ')
         if self.preview and self.positions!=self.preview['start']: self.invalidate()
-        self.draw()
+        if self.preview: self.redraw_preview()
+        else: self.draw()
 
     def calculate(self):
         if self.busy: self.log('Wait for motion or press STOP first.'); return
@@ -436,29 +487,88 @@ class ArmApp:
             self.log('Calibration loaded. Initialize again at the displayed pose.')
         except Exception as e: self.log(str(e))
 
+    def redraw_preview(self):
+        """Retain the same calculated preview when selecting/resizing a view."""
+        if self._preview_plot is None: self.draw()
+        else: self.draw(*self._preview_plot)
+
     def draw(self,q=None,target=None,result=None):
         c=self.canvas; c.delete('all')
-        # Fixed isometric camera; all coordinates are displayed in millimetres.
-        if q is None:
-            q=ik.servo_to_q(self.cal,self.positions) if self.cal and self.initialized else self.m.q0
-        P=ik.fk(self.m,q)[1]*1000
-        project=lambda p:(230+.65*(p[0]-p[1]),220-.60*p[2]+.20*(p[0]+p[1]))
-        for end,label,color in (([100,0,0],'X right','#e03131'),([0,100,0],'Y forward','#2b8a3e'),([0,0,100],'Z up','#1971c2')):
-            a=project([0,0,0]); b=project(end); c.create_line(*a,*b,fill=color,arrow='last'); c.create_text(b[0],b[1]-9,text=label,fill=color)
-        for a,b in zip(P[:-1],P[1:]): c.create_line(*project(a),*project(b),fill='#7048a5',width=4)
-        for p in P:
-            x,y=project(p); c.create_oval(x-4,y-4,x+4,y+4,fill='#7048a5')
+        candidate=q is not None
+        self._preview_plot=(q,target,result) if candidate else None
+        current_q=ik.servo_to_q(self.cal,self.positions) if self.cal and self.initialized else self.m.q0
+        current=ik.fk(self.m,current_q)[1]*1000
+        P=ik.fk(self.m,q)[1]*1000 if candidate else current
+        width=c.winfo_width(); height=c.winfo_height()
+        if width<=1: width=840
+        if height<=1: height=340
+        if width<600 or height<180:
+            c.create_text(width/2,height/2,text='Enlarge the window to show the 3D preview.',fill='#64748b')
+            return
+        view=self.preview_view.get()
+        axes=np.eye(3)*70.
+        fit_points=np.vstack((current,P,[[0,0,0]],axes))
+        if target is not None: fit_points=np.vstack((fit_points,target))
+        xy=fit_points[:,:2]
+        low=xy.min(axis=0)-12; high=xy.max(axis=0)+12
+        floor=np.array([[low[0],low[1],0],[high[0],low[1],0],
+                        [high[0],high[1],0],[low[0],high[1],0]])
+        project=fit_preview_projection(np.vstack((fit_points,floor)),view,
+                                       (28,72,width*.50-40,height-62))
+        c.create_polygon(*[v for p in floor for v in project(p)],
+                         fill='#f1f5f9',outline='#cbd5e1',tags='table_plane')
+        for axis in (0,1):
+            for value in np.arange(math.ceil(low[axis]/50)*50,high[axis],50):
+                a=np.r_[low,0.]; b=np.r_[high,0.]; a[axis]=b[axis]=value
+                c.create_line(*project(a),*project(b),fill='#dce4ed')
+        def arm(points,color,dashed=False):
+            tag='current_link' if dashed else 'preview_link'
+            for a,b in zip(points[:-1],points[1:]):
+                if np.linalg.norm(b-a)>1e-9:
+                    c.create_line(*project(a),*project(b),fill=color,width=3 if dashed else 4,
+                                  dash=(5,3) if dashed else (),tags=tag)
+            for p in points:
+                x,y=project(p);c.create_oval(x-3,y-3,x+3,y+3,fill=color,outline=color)
+        if candidate: arm(current,'#94a3b8',True)
+        arm(P,'#7048a5')
+        for j,(label,color) in enumerate((('X right','#e03131'),('Y forward','#2b8a3e'),('Z up','#1971c2'))):
+            a=np.array(project([0,0,0])); b=np.array(project(axes[j])); delta=b-a
+            if np.linalg.norm(delta)<1e-8:
+                # An axis pointing at the viewer has no projected line length.
+                c.create_oval(a[0]-5,a[1]-5,a[0]+5,a[1]+5,outline=color,width=2)
+                c.create_oval(a[0]-1,a[1]-1,a[0]+1,a[1]+1,fill=color)
+                c.create_text(18,height-42,text=label+' (toward viewer)',anchor='w',fill=color)
+            else:
+                c.create_line(*a,*b,fill=color,width=2,arrow='last',tags='world_axis_'+label[0].lower())
+                dx=6 if delta[0]>=0 else -6
+                c.create_text(b[0]+dx,b[1]-8,text=label,anchor='w' if dx>0 else 'e',fill=color)
+        a=project([0,0,0]);c.create_text(a[0]-8,a[1]+12,text='{0}',fill='#334155')
         if target is not None:
-            x,y=project(target); c.create_line(x-6,y-6,x+6,y+6,fill='red',width=2); c.create_line(x-6,y+6,x+6,y-6,fill='red',width=2)
-        c.create_text(200,12,text='3D isometric preview (purple); target (red)')
-        c.create_text(560,12,text='Position error (mm), logarithmic scale')
+            x,y=project(target)
+            c.create_line(x-6,y-6,x+6,y+6,fill='red',width=2,tags='target_marker')
+            c.create_line(x-6,y+6,x+6,y-6,fill='red',width=2,tags='target_marker')
+        c.create_text(width*.25,14,text='World frame {0}: X right, Y forward, Z up')
+        c.create_text(width*.25,36,text=view,fill='#475569')
+        legend='Gray: current estimate | Purple: calculated | Red: target' if candidate else (
+            'Purple: current estimated pose' if self.initialized else 'Purple: startup model pose (not initialized)')
+        c.create_text(width*.25,height-18,text=legend,fill='#475569')
+        c.create_text(width*.75,14,text='Position error (mm), logarithmic scale')
         if result is not None:
             errors=np.maximum(result['errors']*1000,1e-6); logs=np.log10(errors)
-            lo=min(-1.,float(logs.min())); hi=max(0.,float(logs.max()))
+            lo=math.floor(min(-1.,float(logs.min()))); hi=math.ceil(max(0.,float(logs.max())))
+            left=width*.57; right=width-20; top=68; bottom=height-58
+            for power in range(lo,hi+1,max(1,math.ceil((hi-lo)/6))):
+                y=bottom-(bottom-top)*(power-lo)/(hi-lo)
+                c.create_line(left,y,right,y,fill='#e2e8f0')
+                c.create_text(left-6,y,text=f'{10.**power:g}',anchor='e',fill='#64748b')
             coords=[]
-            for i,v in enumerate(logs): coords.extend((435+290*i/max(1,len(logs)-1),220-180*(v-lo)/max(1e-6,hi-lo)))
+            for i,v in enumerate(logs):coords.extend((left+(right-left)*i/max(1,len(logs)-1),bottom-(bottom-top)*(v-lo)/(hi-lo)))
             if len(coords)>2: c.create_line(*coords,fill='#1971c2',width=2)
-            c.create_text(580,240,text=f'Solver updates: {len(errors)-1}; final {errors[-1]:.4f} mm')
+            c.create_text(left,bottom+15,text='0',fill='#64748b')
+            c.create_text(right,bottom+15,text=str(len(errors)-1),fill='#64748b')
+            c.create_text(width*.75,height-18,text=f'{result["status"]}: {len(errors)-1} updates; final {errors[-1]:.4f} mm')
+        else:
+            c.create_text(width*.75,height*.5,text='Calculate / Preview to show convergence',fill='#64748b')
 
     def save_log(self):
         from tkinter import filedialog
@@ -479,3 +589,4 @@ if __name__=='__main__':
     p.add_argument('--port',default=SERIAL_PORT)
     args=p.parse_args()
     root=tk.Tk(); app=ArmApp(root,simulate=args.simulate,port=args.port); root.mainloop()
+

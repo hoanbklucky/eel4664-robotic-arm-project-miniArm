@@ -166,6 +166,24 @@ GUI uses a labeled **synthetic calibration** for offline testing only.
 5. Click **Move Arm** to execute the checked sequence in the emulator.
 6. Save a screenshot and experiment log.
 
+The preview defaults to **Rear right (Arduino side)**: an orthographic view
+from behind and above the arm, consistent with the annotated frame illustration.
+Use **Preview camera** to select Rear, Top or Right side without moving the arm
+or changing XYZ. The colored arrows mark **world frame {0}**, not the moving
+DH frames at every joint; their display lengths are arbitrary. A colored
+circle in Top/Side views means an axis points toward you.
+
+After Calculate / Preview, **gray dashed links show the current estimate** and
+**purple links show the calculated candidate**; the red x is the target. The
+readout above the drawing remains the current commanded-pose estimate until
+Move Arm executes. A preview by itself does not move the emulator or hardware.
+
+![Reference rendering of the corrected Python Canvas: world frame 0 in a rear-right view, current pose gray, calculated pose purple, target red](miniarm_controlC/images/preview_rear_right.png)
+
+*Reference rendering of the actual Canvas drawing commands for X=40, Y=100,
+Z=150 mm. Native window controls and fonts may differ. This is a positive-X
+example; the earlier sample entry of -40 mm is a different target.*
+
 Use the same target in MATLAB and Python and compare the results. First
 compare the shared XYZ axes and units. The GUI's calibrated joint limits and
 servo rounding can produce different final angles or errors.
@@ -286,4 +304,5 @@ which values you used. Label hardware experiments that were not performed.
 Further details: [MATLAB guide](matlab/README.md),
 [optional Jacobian calculations and tests](OPTIONAL_JACOBIAN_VERIFICATION.md),
 [collision model](COLLISIONS.md).
+
 

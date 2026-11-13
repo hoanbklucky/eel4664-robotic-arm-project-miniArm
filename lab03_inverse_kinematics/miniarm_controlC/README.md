@@ -14,6 +14,14 @@ Click **Initialize at startup pose**, select **IK CONTROL**, enter XYZ mm,
 click **Calculate / Preview**, then **Move Arm**. Offline mode opens no serial
 port. Its fallback synthetic calibration is not a measured hardware calibration.
 
+The preview starts in **Rear right (Arduino side)** view, looking from above.
+Use the Preview camera menu for Rear, Top or Right side. The colored arrows are
+world frame {0}: X right, Y forward, Z up. Gray dashed links are the current
+estimate, purple links are the calculated preview and the red x is the target.
+The current readout changes only as the emulator/arm command sequence advances.
+See the [student guide](../STUDENT_GUIDE.md#5-run-the-python-gui-offline)
+for the reference drawing and interpretation.
+
 For hardware, upload `miniarm_controlC/miniarm_controlC.ino`, close Serial
 Monitor, then run `python miniarm_controlC.py --port COM11` with your actual port.
 Use `python miniarm_calibrate.py` to create your measured `calibration.json`.
@@ -47,3 +55,4 @@ until measured, and do not fully represent camera, fingers, payload or obstacles
 
 Full reference code is provided for students to inspect, verify and explain.
 The old solution-removal generator is not used with this shared implementation.
+

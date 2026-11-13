@@ -1,6 +1,34 @@
 # Python GUI integration validation
 
-## Checks executed
+## Current preview projection correction
+
+The prior hard-coded screen projection had camera-normal Z below zero and
+different horizontal/vertical scale factors. It could make the world axes look
+inconsistent with the instructor's above-table frame illustration. The preview
+now uses an explicit orthonormal camera basis with uniform scale and an
+above-table rear-right default (camera direction proportional to [1,-1,0.8]).
+Camera choices are rear-right, rear, top and right side. They change only the
+drawing; the FK/IK world frame, calibration and servo commands are unchanged.
+The current estimate is gray/dashed when a separate purple candidate is shown.
+The readout is explicitly labeled as current, and axis {0}/table are identified.
+
+Checks executed for this revision:
+
+- **16 numerical tests passed**.
+- **6 noninteractive integration tests passed**, including checked servo paths.
+- **6 projection/Canvas-renderer tests passed**: orthonormal/right-handed camera
+  basis, above-table default, isotropic scaling, known direction checks, arm/TCP
+  and target drawn through the same projection, all four camera views, and a
+  small-window guard that prevents a negative-scale/inverted drawing on resize.
+- The recorded production Canvas commands were rendered and visually inspected.
+  The reference PNG is this headless rendering, not a native Tk window screenshot.
+- The new interactive camera-switch Tk test is provided but was **skipped** here
+  because a display connection is unavailable. The original live Tk integration
+  test was not rerun successfully in this environment. No full native-window
+  execution pass is claimed for this revision.
+- Python source compiles. No hardware was connected or commanded.
+
+## Earlier integration checks
 
 - Existing numerical suite: **16 tests passed**.
 - New GUI/integration suite: **7 tests passed**.
@@ -37,5 +65,7 @@ From `miniarm_controlC`:
 python -m pip install -r requirements.txt
 python -m unittest discover -s ../python -v
 python -m unittest discover -s . -p test_integration.py -v
+python -m unittest discover -s . -p test_preview.py -v
 python miniarm_controlC.py --simulate
 ```
+
