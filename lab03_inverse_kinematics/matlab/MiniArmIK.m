@@ -60,6 +60,7 @@ function J = jacobian(m,q,method,h)
 end
 function [q,r] = solve(m,target,q0,method)
     if nargin<4, method='partial'; end
+    % q is the CURRENT estimate. Start with the user/model seed q0.
     MiniArmIK.validate(m); target=target(:); q=q0(:);
     assert(numel(target)==3 && all(isfinite(target)), 'Target must be finite xyz');
     assert(numel(q)==size(m.mdh,1) && all(isfinite(q)) && ...
@@ -74,26 +75,37 @@ function [q,r] = solve(m,target,q0,method)
     end
     blocked=false;
     for k=1:maxIter
+        % OUTER LOOP: evaluate FK and Jacobian again at the accepted current q.
         e=target-MiniArmIK.fk(m,q);
         if norm(e)<=tol, r.status='converged'; break; end
         J=MiniArmIK.jacobian(m,q,method);
         % Damped least squares: solves least-squares local position update.
         dq=J'*((J*J'+lambda^2*eye(3))\e);
+        % Limit the proposed joint-change vector before trying it.
         dq=dq*min(1,maxStep/max(norm(dq),eps));
         accepted=false;
         for ls=0:15
-            trial=min(max(q+(.5^ls)*dq,m.limits(:,1)),m.limits(:,2));
-            if norm(target-MiniArmIK.fk(m,trial)) < norm(e)-1e-12
+            % INNER LOOP: try q + dq, then q + dq/2, q + dq/4, ...
+            % Keep q unchanged until a candidate passes BOTH acceptance checks.
+            stepScale=.5^ls;
+            qCandidate=q+stepScale*dq; % THIS is current angles + joint update.
+            trial=min(max(qCandidate,m.limits(:,1)),m.limits(:,2));
+            trialError=norm(target-MiniArmIK.fk(m,trial));
+            if trialError < norm(e)-1e-12
                 if MiniArmCollision.edgeClear(m,q,trial)
-                    q=trial; accepted=true; break;
+                    q=trial; % Commit q_(k+1); the next outer iteration uses it.
+                    accepted=true;
+                    break; % Exit only the INNER backtracking loop.
                 end
                 blocked=true;
             end
         end
         if ~accepted
+            % No acceptable step: stop the OUTER loop; do not repeat unchanged q.
             if blocked, r.status='stalled_or_collision'; else, r.status='stalled'; end
             break;
         end
+        % Store the accepted pose, then the outer loop recomputes FK, e and J.
         r.history(:,end+1)=q; r.errors(end+1)=norm(target-MiniArmIK.fk(m,q));
     end
     r.error=norm(target-MiniArmIK.fk(m,q));

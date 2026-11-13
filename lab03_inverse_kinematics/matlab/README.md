@@ -285,11 +285,114 @@ separately. Collision checks do not change the position Jacobian formula.
 
 ## 9. Demo, toolbox figure and verification
 
-`demo_ik` loads `miniarm_model`, makes a default XYZ target with FK of
-`m.demoGoal` (or accepts your target argument), calls `solve`, and draws each
-stored history column using FK. The red x is the target; the error plot comes
-from `r.errors`. It does not run a separate IK algorithm. Its animation steps
-are numerical updates, not a timed servo trajectory.
+### Execution flow when you type demo_ik
+
+1. MATLAB enters `demo_ik.m`, calls `miniarm_model()` and validates the model.
+2. If you typed only `demo_ik`, it computes `target=FK(m.demoGoal)`. If you typed
+   `demo_ik([x;y;z])`, that supplied XYZ is the target. The default goal pose
+   supplies a known-reachable position; its joint angles are not the IK answer.
+3. It calls `MiniArmIK.solve(m,target,m.q0,'partial')`. The solver sets
+   `q=m.q0` and rejects an initially colliding configuration.
+4. The solver runs its outer numerical loop: FK -> position error -> convergence
+   check -> Jacobian at the same current q -> damped joint update -> candidate
+   acceptance, as detailed below.
+5. After the solver finishes, it returns the final q and the result structure r.
+   `demo_ik` prints status, residual, clearance and angles.
+6. Only then does `demo_ik` create its figure and replay `r.history` using FK.
+   This second loop is animation, not another IK solve. The red x is the
+   target; the error curve comes from `r.errors`. An unsuccessful solve is
+   displayed for diagnosis and is labelled with its failure status.
+
+```mermaid
+flowchart TD
+    A["demo_ik: load model and choose XYZ"] --> B["solve: q = initial guess"]
+    B --> C["Check initial collision"]
+    C -->|Clear| D["FK at current q; compute error"]
+    C -->|Collision| X["Return failure"]
+    D --> E{"Within position tolerance?"}
+    E -->|Yes| R["Return result and saved history"]
+    E -->|No| F["Jacobian at q; calculate dq"]
+    F --> G["Candidate = q + scaled dq; apply limits"]
+    G --> H{"Error decreases and path clears?"}
+    H -->|Yes| I["q = trial; save accepted pose"]
+    I --> D
+    H -->|No| J{"Smaller step available?"}
+    J -->|Yes| G
+    J -->|No| X
+    X --> R
+    R --> K["demo_ik: print and animate history"]
+```
+
+The solver also stops at 400 outer iterations and performs a final success
+check. The diagram omits that iteration-limit branch for readability.
+
+### Where the joint update is added
+
+The basic numerical IK idea is `q_next=q+dq`. Our implementation first makes a
+**candidate** and only commits it after checking the actual nonlinear FK and
+collision constraints. In `MiniArmIK.solve`, the steps now appear explicitly:
+
+```matlab
+stepScale = .5^ls;
+qCandidate = q + stepScale*dq; % add update to CURRENT joint vector
+trial = min(max(qCandidate,m.limits(:,1)),m.limits(:,2));
+trialError = norm(target-MiniArmIK.fk(m,trial));
+
+if trialError < norm(e)-1e-12
+    if MiniArmCollision.edgeClear(m,q,trial)
+        q = trial;           % accept this as the NEW current joint vector
+        accepted = true;
+        break;               % exit the INNER loop, not the outer IK loop
+    end
+end
+```
+
+`qCandidate=q+stepScale*dq` is the addition you were looking for. Previously,
+that same addition was nested inside the single line
+`trial=min(max(q+(.5^ls)*dq,...),...)`; it was not missing.
+
+| Variable | Meaning during one outer iteration |
+|---|---|
+| q | Current accepted joint vector; unchanged while trying smaller candidates |
+| e | Target minus FK(q), evaluated before the candidate search |
+| J | Jacobian evaluated at that same q |
+| dq | Damped joint update, with its total norm limited to 0.10 rad |
+| stepScale | 1, 1/2, 1/4, ... down to 1/32768 |
+| qCandidate | q plus the scaled joint update, before joint-limit projection |
+| trial | Candidate after applying joint limits |
+| trialError | Actual XYZ error from FK(trial) |
+
+### Why q = trial is conditional
+
+The Jacobian predicts small changes through `delta_p approximately J*dq`.
+The full FK is nonlinear. Damping and a small update help, but a full candidate
+can still increase the true error, hit a collision, or be altered by joint-limit
+projection. Accepting every proposed update is not guaranteed to make progress.
+
+The code therefore tries the full limited dq first (`ls=0`). If it fails, it
+tries half, quarter, and successively smaller updates, always starting from the
+same accepted q. It accepts the first candidate that reduces the actual error
+and has a clear configured interpolation path.
+
+The `1e-12` in the error comparison is a tiny required error decrease in metres,
+not the convergence tolerance. The convergence tolerance is `tol=1e-4` m.
+
+For a simple arithmetic example, suppose the current angles in DEGREES are
+`[90;60;-60;-60]` and the already-limited update is `[2;-1;3;-2]` degrees. The
+first candidate is `[92;59;-57;-62]`. If rejected, the half-step candidate is
+`[91;59.5;-58.5;-61]`. If that candidate passes both checks, q is assigned that
+half-step result. Actual implementation uses radians throughout.
+
+After acceptance, the solver saves q and continues the **outer** loop. It now
+recomputes FK, e and J using the newly accepted q. The next iteration does not
+reuse the old error or old Jacobian. If all 16 step scales fail, it stops with
+`stalled` or `stalled_or_collision`; it does not loop forever with unchanged q.
+No acceptable decreasing step is a local-search failure, not a proof that no
+collision-free configuration exists.
+
+### Plot settings and optional toolbox display
+
+The animation steps are numerical updates, not a timed servo trajectory.
 
 The call `view(ax,40,25)` inside the animation loop sets its viewing direction.
 You can replace it with `view(ax,135,45)` or your preferred measured camera

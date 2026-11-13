@@ -1,11 +1,13 @@
 function demo_ik(target)
 % Run demo_ik or demo_ik([0.20;0.04;0.10]); no add-on required.
+% Execution: load model -> select XYZ target -> solve IK -> replay saved poses.
 m=miniarm_model(); MiniArmIK.validate(m);
 if m.exampleOnly, warning('Geometry/limits require hardware validation before motion'); end
 if nargin==0
     target=MiniArmIK.fk(m,m.demoGoal); % known reachable under simulation limits
 end
 target=target(:);
+% solve completes ALL numerical iterations before the animation below starts.
 [q,r]=MiniArmIK.solve(m,target,m.q0,'partial');
 fprintf('%s: residual %.6f m, %d updates\n',r.status,r.error,r.iterations);
 if isfinite(r.clearance)
@@ -15,6 +17,7 @@ disp(table((1:numel(q))',q,rad2deg(q),'VariableNames',{'Joint','Radians','Degree
 figure('Name','Craig MDH position IK');
 subplot(1,2,1); ax=gca;
 for k=1:size(r.history,2)
+    % Replay a stored accepted configuration; this loop does not update IK.
     [~,~,P]=MiniArmIK.fk(m,r.history(:,k));
     cla(ax); plot3(ax,P(1,:),P(2,:),P(3,:),'o-','LineWidth',2); hold(ax,'on');
     plot3(ax,target(1),target(2),target(3),'rx','MarkerSize',12,'LineWidth',2);
