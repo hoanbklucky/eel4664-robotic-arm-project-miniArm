@@ -47,6 +47,16 @@ You do not need to modify the supplied mathematical algorithms.
 
 ## 2. Develop the DH table using the assigned frames
 
+![Hiwonder miniArm with assigned Craig modified-DH frames, including frame 1 directly on the arm](matlab/images/miniarm_craig_dh_frames.png)
+
+*Assigned frames on the miniArm. Red = X, green = Y, blue = Z. Frames {1}
+and {2} share the shoulder origin; both are drawn on the arm, and the inset
+shows their axes separately for clarity. The illustrated pose is
+[base, shoulder, elbow, wrist] = [90°, 60°, −60°, −60°]. The hardware drawing
+is schematic; frame origins and directions follow the lab's DH model.*
+
+[Open or download the full-resolution frame illustration](matlab/images/miniarm_craig_dh_frames.png)
+
 Viewed from behind the arm at the Arduino and knobs, frame {0} has
 **X right, Y forward and Z up**. The base angle is 0° right, 90° forward and
 180° left. The four positioning joints are base, shoulder, elbow and wrist;
