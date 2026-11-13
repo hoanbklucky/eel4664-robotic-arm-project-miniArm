@@ -33,7 +33,9 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(all(p[0]==40 for p in poses))
         prev=self.start
         for pose in poses:
-            for state in ik.sequential_states(prev,pose):
+            ik.validate_coordinated_leg(self.m,self.cal,prev,pose)
+            for f in np.linspace(0,1,101):
+                state=np.asarray(prev)+f*(np.asarray(pose)-prev)
                 self.assertTrue(ik.clearance(self.m,ik.servo_to_q(self.cal,state))[0]>0)
             prev=pose
 
@@ -84,6 +86,7 @@ class GuiTests(unittest.TestCase):
             self.assertFalse(app.busy)
             app.move(); self.assertTrue(app.busy)
             for _ in range(500):
+                if app.link.timed is not None:app.link.timed[2]-=.05
                 app.link.last_step=0; app.poll()
                 if not app.busy: break
             self.assertFalse(app.busy)

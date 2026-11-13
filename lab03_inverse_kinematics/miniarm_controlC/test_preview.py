@@ -108,7 +108,7 @@ class PreviewGuiTests(unittest.TestCase):
         import tkinter as tk
         root=tk.Tk();root.withdraw();app=gui.ArmApp(root,simulate=True)
         try:
-            app.poll();app.initialize();app.poll();app.set_mode('I');app.poll()
+            app.poll()
             target=np.array([40.,100.,150.])
             for e,v in zip(app.entries,target):e.delete(0,'end');e.insert(0,str(v))
             before=list(app.positions);app.calculate()

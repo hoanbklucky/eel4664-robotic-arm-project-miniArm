@@ -86,10 +86,14 @@ emulator. It requires a desktop-capable Python/Tk environment, but no Arduino.
 ## Execution details
 
 The solver enforces measured joint limits and configured capsule clearance.
-Accepted IK configurations become rounded servo waypoints. Each Arduino `J`
-leg moves one joint at a time; Python checks that exact raw-command path,
-including piecewise calibration knots. It waits for each `OK` before sending
-the next waypoint. The claw command is preserved during IK.
+Only the final IK configuration becomes calibrated servo targets. One T command
+sends those targets and a duration; Arduino interpolates all channels together
+with cubic easing. Python checks that coordinated path, including calibration
+knots, before sending anything. The claw command is preserved. A blocked direct
+path is rejected; IK iteration history is never streamed as a fallback trajectory.
+See [v2.0.0 smooth motion](../SMOOTH_MOTION.md) for the equations and upgrade steps.
+**Re-upload the updated Arduino sketch and update Python together.** The GUI
+shows a simulation/hardware banner, app version, Ngo Lab and firmware version.
 
 `P` and `OK` describe commands issued by firmware, not measured physical motion.
 Manual APP/KNOB controls bypass IK checks. Capsule dimensions remain provisional

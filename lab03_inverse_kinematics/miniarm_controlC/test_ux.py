@@ -23,6 +23,7 @@ class InteractionTests(unittest.TestCase):
         app.link.cur=list(app.positions);app.link.tgt=list(app.positions)
         app.initialize();self.assertEqual(app.mode,'I');self.assertTrue(app.busy)
         for _ in range(1000):
+            if app.link.timed is not None:app.link.timed[2]-=.05
             app.link.last_step=0;app.poll()
             if not app.busy:break
         self.assertFalse(app.busy);self.assertEqual(app.mode,'I');self.assertEqual(app.link.mode,'I')
@@ -32,7 +33,7 @@ class InteractionTests(unittest.TestCase):
         app.calculate();self.assertIsNotNone(app.preview)
 
     def test_upright_preserves_app_but_does_not_silently_leave_knob_mode(self):
-        app=control();app.set_mode('A');app.poll();app.initialize();app.link.last_step=0;app.poll()
+        app=control();app.set_mode('A');app.poll();app.initialize();app.link.timed[2]-=20;app.link.last_step=0;app.poll()
         self.assertEqual(app.mode,'A');self.assertEqual(app.link.mode,'A')
         app.set_mode('K');app.poll();self.assertEqual(app.mode,'K');before=list(app.link.cur)
         self.assertEqual(app.init_button.options['state'],'disabled')

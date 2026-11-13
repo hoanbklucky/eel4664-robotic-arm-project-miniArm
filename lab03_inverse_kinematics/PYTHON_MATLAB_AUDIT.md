@@ -49,7 +49,7 @@ about z_i; do not copy a standard-DH z_(i−1) geometric-Jacobian rule unchanged
 | `python/miniarm_source_model.py` | Defines the same MDH, base/tool, default seed, limits and collision configuration as `matlab/miniarm_model.m`. Its planar helpers are historical checks, not the GUI solver. |
 | `python/kinematics.py` | `mdh`: A and analytic derivative D. `fk`/`position`: chain multiplication and TCP. `jacobian`: analytic partial derivative or central finite differences. `solve`: the same DLS/backtracking loop as `MiniArmIK.solve`. Internal units m/rad. |
 | `python/collision.py` | Same capsule/floor geometry and continuous joint-edge checks as `MiniArmCollision.m`; Python indices are MATLAB indices minus one. |
-| `miniarm_controlC/miniarm_ik.py` | GUI adapter: mm/degrees at public display helpers, m/rad in the solver. Intersects model joint limits with limits derived from raw calibration, reorders channels, rounds commands and checks actual sequential execution. |
+| `miniarm_controlC/miniarm_ik.py` | GUI adapter: mm/degrees at public display helpers, m/rad in the solver. Intersects model joint limits with limits derived from raw calibration, reorders channels, rounds commands and checks actual coordinated timed execution. |
 | `miniarm_controlC/miniarm_calibration.py` | Loads/checks calibration; implements forward/inverse piecewise-linear conversion, legacy-angle conversion and raw limits. All four joints use `servo_to_q`/`q_to_servo`. |
 | `miniarm_controlC/miniarm_calibrate.py` | Measurement form. New entries are DH q in degrees directly; it writes `angle_convention=joint`. Raw commands/limits are integers; measured angles may have decimals. No IK or serial I/O. |
 | `miniarm_controlC/miniarm_controlC.py` | Tk GUI, serial/emulator, upright initialization, preview/Move gating, and acknowledgement-driven execution. The preview camera only changes the drawing. |
@@ -128,22 +128,27 @@ channels receive their raw values unchanged.
 
 ## 5. What happens after Calculate and Move
 
-Calculate reads XYZ mm, decodes the current raw commands back to q radians,
-converts XYZ to metres, and calls the shared solver. On success it converts
-accepted history poses to integer commands, preserves claw opening, and checks
-each actual sequential J leg: base, shoulder, elbow, wrist, claw. Checks include
-piecewise-calibration knots and continuous joint interpolation. It recomputes
-FK after rounding and requires predicted final miss <=10 mm. That command-rounding
-tolerance is separate from the IK solver's 0.1 mm mathematical tolerance.
+Calculate reads XYZ mm, decodes current raw commands back to q radians,
+converts XYZ to metres, and calls the shared solver. In v2.0.0 it converts only
+the final configuration to positioning servo targets and preserves claw opening.
+`validate_coordinated_leg` checks the common-progress raw path, splitting at all
+calibration knots and using continuous joint-edge checks on each segment. It
+recomputes FK after rounding and requires predicted final miss <=10 mm, separate
+from the IK solver's 0.1 mm mathematical tolerance.
 
-Only a successful, checked plan enables Move Arm. Move rechecks target/start
-state and the plan, then sends one waypoint at a time, waiting for OK. The
-firmware does not recalculate IK or apply DH offsets. Its P reports are command
-estimates, not measured physical angles. Reloading calibration invalidates the
-old preview. Hardware requires explicit initialization; the emulator prepares
-its reference automatically and selects IK mode, including after a valid saved
-calibration reload. Upright first enable uses q=[90,90,0,0] and immediate INIT;
-later upright requests use checked gradual J. No physical link is auto-enabled.
+Move rechecks the target, start, path and duration, then sends one T command with
+final targets and duration. Arduino generates synchronized cubic interpolation
+and returns OK at the end. Solver history remains a numerical diagnostic, not
+a streamed motion trajectory. Direct-path failure asks for an intermediate XYZ
+target; it does not fall back to the solver history. See [smooth motion](SMOOTH_MOTION.md)
+for the v2.0.0 firmware update and timing details. Legacy J/M only support manual
+commands; the shared kinematics, frames, DH table and calibration equations have
+not changed. P reports retain fractional raw command estimates, not measured
+shaft angles. STOP freezes the current fractional commands and retains power.
+
+Hardware requires explicit initialization; simulation prepares its reference
+automatically. First upright INIT remains immediate, while subsequent calibrated
+upright moves use the checked coordinated T path and preserve APP/IK mode.
 
 ## 6. Findings and corrections from this audit
 
@@ -168,7 +173,8 @@ later upright requests use checked gradual J. No physical link is auto-enabled.
 - The legacy reference-pose helper no longer clips an unavailable upright
   reference into a different posture.
 - Emulator INIT/reset, pre-initialization motion rejection, mode validation and
-  CFG timing/ranges were aligned with the firmware. No Arduino change is needed.
+  CFG timing/ranges were aligned with the prior firmware. Version 2.0.0 now
+  requires the updated Arduino sketch for coordinated T interpolation.
 
 Default `--simulate` ignores a local calibration.json and uses the synthetic
 mapping. `--simulate --use-calibration` explicitly tests the saved hardware
@@ -185,7 +191,8 @@ python -m unittest discover -s python -v
 python -m unittest discover -s miniarm_controlC -p "test_*.py" -v
 ```
 
-Audit result: **51 tests passed, 2 native Tk tests skipped without a display**.
+Current v2.0.0 result: **73 tests passed, 2 native Tk tests skipped without a display**.
+The newer [motion checks](SMOOTH_MOTION.md) include a host harness of the sketch.
 All Python sources compile. New checks compare the MATLAB model configuration
 including collision indices and GUI simulation limits; 60 random configurations
 against independent elementary transforms, XYZ formulas and an analytic Jacobian;

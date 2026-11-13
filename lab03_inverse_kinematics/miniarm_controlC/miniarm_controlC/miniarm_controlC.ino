@@ -24,21 +24,25 @@
     MODE A | K | I        APP, KNOB, or IK control (also sets the LED color)
     M p1 p2 p3 p4 p5      move all joints together
     J p1 p2 p3 p4 p5      move one joint at a time: base, arm, forearm, wrist, claw
-    STOP                  freeze where the arm is right now
+    T ms p1 p2 p3 p4 p5  final targets, coordinated cubic motion (no IK stream)
+    STOP                  freeze current commands; servo power stays on
 
   Arduino -> Python
+    FW 2.0.0 TIMED        firmware/capability announcement
     READY                 sketch started (also after every reset)
     CFG OK                settings received
     MODE A | K | I        mode changed
     OK                    a move (INIT, M or J) has finished
     STOPPED               the arm was frozen
     K r1 r2 r3 r4 r5      knob readings, 0-1023, every 50 ms
-    P p1 p2 p3 p4 p5      servo positions, every 100 ms while they change
+    P p1 p2 p3 p4 p5      raw command estimates (3 decimals),, every 100 ms while they change
     ERR <reason>          a command was not understood or not allowed
 */
 
 #include <Servo.h>
 #include <FastLED.h>
+#include <math.h>
+#include <ctype.h>
 
 // ---------------------------------------------------------------------------
 // Hardware
@@ -58,8 +62,8 @@ CRGB leds[1];
 
 bool servosOn = false;          // false until INIT: servos are limp
 char mode = 'A';
-int cur[5] = { 90, 90, 90, 90, 90 };    // where each servo is now
-int tgt[5] = { 90, 90, 90, 90, 90 };    // where each servo is going
+float cur[5] = { 90, 90, 90, 90, 90 };    // where each servo is now
+float tgt[5] = { 90, 90, 90, 90, 90 };    // where each servo is going
 int lo[5]  = { 0, 0, 0, 0, 0 };         // safe range, from CFG
 int hi[5]  = { 180, 180, 180, 180, 180 };
 unsigned long stepMs = 15;              // ms per 1-unit step
@@ -68,9 +72,15 @@ unsigned long settleMs = 500;           // pause between joints in a J move
 bool moveActive = false;        // an M or INIT move is running (send OK when done)
 bool seqActive = false;         // a J move is running
 uint8_t seqIndex = 0;           // which joint of MOVE_ORDER is moving
-int seqTarget[5];
+float seqTarget[5];
 bool settling = false;
 unsigned long settleStart = 0;
+bool timedActive = false;
+float timedStart[5], timedTarget[5];
+unsigned long timedBegan = 0, timedDuration = 0;
+const unsigned long TIMED_FRAME_MS = 20;
+const float MAX_TIMED_RAW_SPEED = 45.0f;  // cubic peak speed, raw units/second
+
 
 float knob[5];                  // smoothed knob readings, 0-1023
 bool knobStarted = false;
@@ -80,12 +90,17 @@ bool positionsChanged = true;
 // Helpers
 // ---------------------------------------------------------------------------
 // Same convention as read_mini.ino: the claw channel (S1) is inverted
-void writeServo(uint8_t i, int value) {
-  servos[i].write(i == 0 ? 180 - value : value);
+void writeServo(uint8_t i, float value) {
+  // Preserve the calibrated raw convention; invert S1 exactly once.
+  float physical = i == 0 ? 180 - value : value;
+  // Default Servo.attach endpoints, with sub-degree pulse resolution.
+  int pulse = (int)(MIN_PULSE_WIDTH + physical *
+              (MAX_PULSE_WIDTH - MIN_PULSE_WIDTH) / 180.0f + 0.5f);
+  servos[i].writeMicroseconds(pulse);
 }
 
-int clampToRange(uint8_t i, int value) {
-  return constrain(value, lo[i], hi[i]);
+float clampToRange(uint8_t i, float value) {
+  return constrain(value, (float)lo[i], (float)hi[i]);
 }
 
 // A knob reading 0-1023 -> a servo value inside that joint's safe range
@@ -106,6 +121,7 @@ void freeze() {                 // stop every joint where it is
   for (uint8_t i = 0; i < 5; i++) tgt[i] = cur[i];
   moveActive = false;
   seqActive = false;
+  timedActive = false;
   settling = false;
 }
 
@@ -122,11 +138,24 @@ uint8_t readInts(char *text, int out[], uint8_t n) {
   return count;
 }
 
+// Strict finite numeric parser for raw positions and the timed command.
+bool readFloats(char *text, float out[], uint8_t n) {
+  char *end;
+  for (uint8_t i=0; i<n; i++) {
+    out[i] = strtod(text, &end);
+    if (end==text || !isfinite(out[i])) return false;
+    text=end;
+  }
+  while (isspace((unsigned char)*text)) text++;
+  return *text=='\0';
+}
+
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 void handleLine(char *line) {
   int v[12];
+  float p[6];
 
   if (strncmp(line, "CFG ", 4) == 0) {
     if (readInts(line + 4, v, 12) != 12) { Serial.println(F("ERR CFG needs 12 numbers")); return; }
@@ -140,9 +169,9 @@ void handleLine(char *line) {
 
   } else if (strncmp(line, "INIT ", 5) == 0) {
     freeze();
-    if (readInts(line + 5, v, 5) != 5) { Serial.println(F("ERR INIT needs 5 numbers")); return; }
+    if (!readFloats(line + 5, p, 5)) { Serial.println(F("ERR INIT needs 5 numbers")); return; }
     for (uint8_t i = 0; i < 5; i++) {
-      cur[i] = tgt[i] = clampToRange(i, v[i]);
+      cur[i] = tgt[i] = clampToRange(i, p[i]);
       writeServo(i, cur[i]);                     // set the pulse first...
       if (!servosOn) servos[i].attach(SERVO_PINS[i]);  // ...then switch the servo on
     }
@@ -158,16 +187,36 @@ void handleLine(char *line) {
     setLed(m);
     Serial.print(F("MODE ")); Serial.println(m);
 
+  } else if (strncmp(line, "T ", 2) == 0) {
+    if (!servosOn) { Serial.println(F("ERR send INIT first")); return; }
+    if (mode=='K') { Serial.println(F("ERR in knob mode")); return; }
+    if (!readFloats(line+2,p,6) || p[0]<500 || p[0]>25000 || p[0]!=floorf(p[0])) {
+      Serial.println(F("ERR T needs duration_ms 500..25000 and five finite raw targets")); return;
+    }
+    float maxDelta=0;
+    for (uint8_t i=0; i<5; i++) {
+      if (p[i+1]<lo[i] || p[i+1]>hi[i]) {
+        Serial.println(F("ERR timed target outside CFG limits")); return;
+      }
+      maxDelta=max(maxDelta,fabsf(p[i+1]-cur[i]));
+    }
+    if (p[0]+0.001f < 1500.0f*maxDelta/MAX_TIMED_RAW_SPEED) {
+      Serial.println(F("ERR duration too short for timed speed limit")); return;
+    }
+    freeze();
+    for (uint8_t i=0; i<5; i++) { timedStart[i]=cur[i]; timedTarget[i]=p[i+1]; }
+    timedBegan=millis(); timedDuration=(unsigned long)p[0]; timedActive=true;
+
   } else if (line[0] == 'M' || line[0] == 'J') {
     if (!servosOn)   { Serial.println(F("ERR send INIT first")); return; }
     if (mode == 'K') { Serial.println(F("ERR in knob mode")); return; }
-    if (readInts(line + 1, v, 5) != 5) { Serial.println(F("ERR needs 5 numbers")); return; }
+    if (!readFloats(line + 1, p, 5)) { Serial.println(F("ERR needs 5 numbers")); return; }
     freeze();
     if (line[0] == 'M') {
-      for (uint8_t i = 0; i < 5; i++) tgt[i] = clampToRange(i, v[i]);
+      for (uint8_t i = 0; i < 5; i++) tgt[i] = clampToRange(i, p[i]);
       moveActive = true;
     } else {
-      for (uint8_t i = 0; i < 5; i++) seqTarget[i] = clampToRange(i, v[i]);
+      for (uint8_t i = 0; i < 5; i++) seqTarget[i] = clampToRange(i, p[i]);
       seqIndex = 0;
       seqActive = true;
     }
@@ -176,7 +225,7 @@ void handleLine(char *line) {
     freeze();
     Serial.println(F("STOPPED"));
     Serial.print('P');
-    for (uint8_t i=0; i<5; i++) { Serial.print(' '); Serial.print(cur[i]); }
+    for (uint8_t i=0; i<5; i++) { Serial.print(' '); Serial.print(cur[i], 3); }
     Serial.println();
 
   } else if (line[0] != '\0') {
@@ -185,7 +234,7 @@ void handleLine(char *line) {
 }
 
 void readSerial() {
-  static char buf[64];
+  static char buf[96];
   static uint8_t len = 0;
   while (Serial.available() > 0) {
     char c = Serial.read();
@@ -221,9 +270,10 @@ void updateKnobs() {
 // ---------------------------------------------------------------------------
 // Motion: one servo unit per stepMs, so every move is a slow ramp
 // ---------------------------------------------------------------------------
-bool stepToward(uint8_t i, int target) {        // returns true once the joint is there
+bool stepToward(uint8_t i, float target) {        // returns true once the joint is there
   if (cur[i] != target) {
-    cur[i] += (cur[i] < target) ? 1 : -1;
+    float delta=target-cur[i];
+    cur[i] = fabsf(delta)<=1 ? target : cur[i]+(delta>0 ? 1 : -1);
     writeServo(i, cur[i]);
     positionsChanged = true;
   }
@@ -232,8 +282,23 @@ bool stepToward(uint8_t i, int target) {        // returns true once the joint i
 
 void updateMotion() {
   static unsigned long last = 0;
-  if (!servosOn || millis() - last < stepMs) return;
-  last = millis();
+  if (!servosOn) return;
+  unsigned long now=millis();
+  if (timedActive) {
+    if (now-last<TIMED_FRAME_MS && now-timedBegan<timedDuration) return;
+    last=now;
+    float u=min(1.0f,(float)(now-timedBegan)/timedDuration);
+    float fraction=u*u*(3.0f-2.0f*u);  // common progress; zero endpoint velocity
+    for (uint8_t i=0; i<5; i++) {
+      cur[i] = u>=1 ? timedTarget[i] : roundf((timedStart[i]+fraction*(timedTarget[i]-timedStart[i]))*1000.0f)/1000.0f;
+      tgt[i]=cur[i]; writeServo(i,cur[i]);
+    }
+    positionsChanged=true;
+    if (u>=1) { timedActive=false; Serial.println(F("OK")); }
+    return; // nonblocking: next loop still reads STOP and knobs
+  }
+  if (now-last<stepMs) return;
+  last=now;
 
   if (mode == 'K') {                            // knobs drive the servos directly
     for (uint8_t i = 0; i < 5; i++) {
@@ -277,7 +342,7 @@ void reportPositions() {
   last = millis();
   positionsChanged = false;
   Serial.print('P');
-  for (uint8_t i = 0; i < 5; i++) { Serial.print(' '); Serial.print(cur[i]); }
+  for (uint8_t i = 0; i < 5; i++) { Serial.print(' '); Serial.print(cur[i], 3); }
   Serial.println();
 }
 
@@ -287,6 +352,7 @@ void setup() {
   FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, 1);
   FastLED.setBrightness(120);
   setLed('?');                                  // white until Python picks a mode
+  Serial.println(F("FW 2.0.0 TIMED"));
   Serial.println(F("READY"));
 }
 

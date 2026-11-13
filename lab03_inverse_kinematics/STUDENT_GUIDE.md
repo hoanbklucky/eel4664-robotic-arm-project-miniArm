@@ -157,7 +157,8 @@ Use the same Python interpreter for installation and execution. The standard
 Windows Python installer includes Tkinter; on Linux install your distribution's
 Tk package if needed.
 
-No Arduino connection is opened in this mode. By default, `--simulate` uses a
+The GUI prominently shows **SIMULATION — NO PHYSICAL MOVEMENT**, plus its
+version and developer (Ngo Lab). No Arduino connection is opened in this mode. By default, `--simulate` uses a
 labeled **synthetic calibration** and ignores any local `calibration.json`, so
 the offline exercise is reproducible. It does not overwrite your saved file.
 Both MATLAB and Python use nominal elbow/wrist limits of -90..90 degrees.
@@ -331,10 +332,15 @@ numerical residual, rounded-command miss, measured XYZ and measured target error
 The measured error goal is **10 mm or less**. Submit out-of-tolerance results
 honestly with an explanation and corrective attempt.
 
-The GUI preserves claw opening during IK, starts from Arduino's last reported
-commanded pose, and queues one J waypoint at a time, waiting for OK. Each J
-executes base → shoulder → elbow → wrist → claw. Python checks each raw-unit
-step, including calibration knots, before enabling movement. The firmware
+The GUI preserves claw opening during IK and starts from Arduino's last reported
+commanded pose. Version 2.0.0 sends only the final calibrated servo targets and a
+duration. Arduino interpolates all joints together with a cubic easing profile;
+IK iteration history is not a motion trajectory. Python checks the coordinated
+path, including all calibration knots, before enabling movement. Use Move time
+(s, minimum) to choose a slower motion; larger moves may take longer to limit
+command speed. A blocked direct path requires a clear intermediate target.
+Update both Python and the Arduino sketch; see [smooth motion](SMOOTH_MOTION.md).
+The firmware
 reports issued servo commands, not measured shaft angles. It cannot detect
 stall, sag, slippage or a physical collision. STOP cancels the remaining queue
 and sends STOP before redrawing the preview. Once Arduino processes it, the

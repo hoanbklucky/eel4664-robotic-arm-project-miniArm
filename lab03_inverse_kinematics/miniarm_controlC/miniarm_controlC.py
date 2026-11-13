@@ -39,6 +39,7 @@ import tkinter as tk
 from tkinter import scrolledtext
 
 import miniarm_calibration as mc
+from miniarm_version import APP_VERSION, DEVELOPER
 
 try:
     import miniarm_ik as ik                 # needs numpy
@@ -175,6 +176,8 @@ class SimulatedArm:
     Same commands and replies, except there are no knob readings."""
 
     simulated = True
+    supports_timed = True
+    firmware_version = APP_VERSION
     ORDER = [BASE, ARM, FOREARM, WRIST, CLAW]
 
     def __init__(self, inbox):
@@ -186,6 +189,7 @@ class SimulatedArm:
         self.mode = "A"
         self.move_active = False
         self.seq = None            # [targets, index, settle_until]
+        self.timed = None          # [start, end, start_time, duration_seconds]
         self.last_step = self.last_report = 0.0
         self.changed = False
         self.step_ms,self.settle_ms=STEP_MS,SETTLE_MS
@@ -193,32 +197,51 @@ class SimulatedArm:
 
     def send(self, line):
         parts = line.split()
-        cmd, nums = parts[0], [int(p) for p in parts[1:] if p.lstrip("-").isdigit()]
+        if not parts:return
+        cmd=parts[0]
+        try:nums=[float(p) for p in parts[1:]]
+        except ValueError:nums=[]
         clamp = lambda i, v: max(self.limits[i][0], min(self.limits[i][1], v))
-        if cmd == "CFG" and len(nums) == 12:
+        if cmd == "CFG" and len(nums) == 12 and all(np.isfinite(v) and v==int(v) for v in nums):
             self.limits = [(max(0,min(180,min(nums[2*i:2*i+2]))),
                             max(0,min(180,max(nums[2*i:2*i+2])))) for i in range(5)]
             self.step_ms,self.settle_ms=max(1,nums[10]),max(0,nums[11])
             self.inbox.put("CFG OK")
-        elif cmd == "INIT" and len(nums) == 5:
+        elif cmd == "INIT" and len(nums) == 5 and np.isfinite(nums).all():
+            self.timed=None
             self.seq,self.move_active=None,False  # INIT freezes old motion, as firmware does
             self.cur = [clamp(i, v) for i, v in enumerate(nums)]
             self.tgt = list(self.cur)
             self.on = self.changed = True
             self.inbox.put("OK")
+        elif cmd == "T":
+            if not self.on:self.inbox.put('ERR send INIT first');return
+            if self.mode=='K':self.inbox.put('ERR in knob mode');return
+            try:
+                values=[float(p) for p in parts[1:]]
+                if len(values)!=6 or not np.isfinite(values).all():raise ValueError
+                duration=values[0];target=values[1:]
+                if duration!=int(duration) or not 500<=duration<=25000:raise ValueError
+                if any(not lo<=v<=hi for v,(lo,hi) in zip(target,self.limits)):raise ValueError
+                if duration+1e-3<1500*max(abs(a-b) for a,b in zip(self.cur,target))/45:raise ValueError
+            except ValueError:self.inbox.put('ERR invalid timed target/duration');return
+            self.tgt=list(self.cur);self.seq=None;self.move_active=False
+            self.timed=[list(self.cur),target,time.monotonic(),duration/1000]
         elif cmd == "MODE":
             if len(parts)!=2 or parts[1] not in ('A','K','I'):
                 self.inbox.put('ERR MODE is A, K or I'); return
             self.tgt, self.move_active, self.seq = list(self.cur), False, None
+            self.timed=None
             self.mode = parts[1]
             self.inbox.put(f"MODE {self.mode}")
-        elif cmd in ("M", "J") and len(nums) == 5:
+        elif cmd in ("M", "J") and len(nums) == 5 and np.isfinite(nums).all():
             if not self.on:
                 self.inbox.put('ERR send INIT first'); return
             if self.mode == "K":
                 self.inbox.put("ERR in knob mode")
                 return
             self.tgt, self.seq, self.move_active = list(self.cur), None, False
+            self.timed=None
             targets = [clamp(i, v) for i, v in enumerate(nums)]
             if cmd == "M":
                 self.tgt, self.move_active = targets, True
@@ -226,18 +249,28 @@ class SimulatedArm:
                 self.seq = [targets, 0, 0.0]
         elif cmd == "STOP":
             self.tgt, self.move_active, self.seq = list(self.cur), False, None
+            self.timed=None
             self.inbox.put("STOPPED")
             self.inbox.put("P " + " ".join(str(v) for v in self.cur))
 
     def _step(self, i, target):
         if self.cur[i] != target:
-            self.cur[i] += 1 if self.cur[i] < target else -1
+            delta=target-self.cur[i]
+            self.cur[i]=target if abs(delta)<=1 else self.cur[i]+(1 if delta>0 else -1)
             self.changed = True
         return self.cur[i] == target
 
     def tick(self):
         now = time.monotonic()
-        while self.on and now - self.last_step >= self.step_ms / 1000:
+        if self.on and self.timed is not None:
+            start,end,began,duration=self.timed
+            u=min(1.,max(0.,(now-began)/duration));fraction=u*u*(3-2*u)
+            self.cur=[round(a+(b-a)*fraction,3) for a,b in zip(start,end)]
+            self.tgt=list(self.cur);self.changed=True
+            if u>=1:
+                self.cur=list(end);self.tgt=list(end);self.timed=None;self.inbox.put('OK')
+            self.last_step=now  # legacy ramps must not overwrite the timed curve
+        while self.on and self.timed is None and now - self.last_step >= self.step_ms / 1000:
             self.last_step = now if now - self.last_step > 1 else self.last_step + self.step_ms / 1000
             if self.seq:
                 targets, idx, settle_until = self.seq
@@ -268,7 +301,9 @@ class SimulatedArm:
 
 class ArmApp:
     def __init__(self, root, simulate=False, port='COM11', use_calibration=False):
-        self.root=root; root.title('miniArm 3D XYZ Control')
+        self.root=root
+        root.title(f'miniArm XYZ Control v{APP_VERSION} — {"SIMULATION" if simulate else "REAL ROBOT"} — {DEVELOPER}')
+        self.timed_supported=False;self.firmware_version='unknown'
         self.inbox=queue.Queue(); self.link=None; self.ready=False
         self.mode='A'; self.positions=[90]*5; self.commanded=[90]*5
         self.initialized=False; self.busy=False; self.pending=None
@@ -286,9 +321,11 @@ class ArmApp:
         else:
             try: self.link=SerialLink(port,BAUD_RATE,self.inbox)
             except Exception as e: self.log(f'Connection failed: {e}. Use --simulate for offline work.')
-        self.status.set(('SIMULATION: synthetic calibration; no physical movement' if self.synthetic else
-                         'SIMULATION: saved hardware calibration; no physical movement')
-                        if simulate else f'Hardware port: {port}')
+        self.status.set(('SIMULATION — NO PHYSICAL MOVEMENT | synthetic calibration' if self.synthetic else
+                         'SIMULATION — NO PHYSICAL MOVEMENT | saved calibration')
+                        if simulate else f'REAL ROBOT — physical movement enabled after initialization | {port}')
+        self.connection_banner.config(bg='#dbeafe' if simulate else '#fef3c7',fg='#1e40af' if simulate else '#92400e')
+        self.log(f'miniArm XYZ Control v{APP_VERSION} — Developed by {DEVELOPER}; '+('SIMULATION, no physical movement' if simulate else f'REAL ROBOT, port {port}'))
         if self.synthetic:
             self.log('SIMULATION uses synthetic calibration; local calibration.json is ignored. Use --simulate --use-calibration to test your measured mapping.')
         elif self.cal:
@@ -310,7 +347,11 @@ class ArmApp:
         self.reload_button.pack(side='left')
         self.mode_status=tk.StringVar(value='Not initialized')
         tk.Label(self.root,textvariable=self.mode_status,font=('Segoe UI',10,'bold')).pack()
-        self.status=tk.StringVar(); tk.Label(self.root,textvariable=self.status).pack()
+        self.status=tk.StringVar()
+        self.connection_banner=tk.Label(self.root,textvariable=self.status,font=('Segoe UI',10,'bold'),padx=12,pady=7)
+        self.connection_banner.pack(fill='x',padx=10,pady=4)
+        self.version_info=tk.StringVar(value=f'v{APP_VERSION} | Developed by {DEVELOPER} | Firmware: waiting for connection')
+        tk.Label(self.root,textvariable=self.version_info,fg='#475569').pack()
         setup=tk.Frame(self.root); setup.pack(fill='x',padx=12)
         self.init_text=tk.StringVar(); tk.Label(setup,textvariable=self.init_text).pack(side='left')
         self.init_button=tk.Button(setup,command=self.initialize)
@@ -334,6 +375,12 @@ class ArmApp:
             e=tk.Entry(inp,width=12,textvariable=variable); e.grid(row=1,column=col,padx=10)
             variable.trace_add('write',lambda *args:self.invalidate())
             e.bind('<Return>',lambda event:self.calculate()); self.entries.append(e)
+        timing=tk.Frame(self.root);timing.pack(pady=3)
+        tk.Label(timing,text='Move time (s, minimum):').pack(side='left')
+        self.move_seconds=tk.StringVar(value='2.0')
+        self.duration_input=tk.Spinbox(timing,from_=0.5,to=15,increment=.5,textvariable=self.move_seconds,width=5)
+        self.duration_input.pack(side='left',padx=6)
+        tk.Label(timing,text='All joints move together; larger moves may take longer.').pack(side='left')
         actions=tk.Frame(self.root); actions.pack()
         self.calculate_button=tk.Button(actions,text='Calculate / Preview',command=self.calculate)
         self.calculate_button.pack(side='left',padx=4)
@@ -365,6 +412,7 @@ class ArmApp:
         self.terminal.pack(padx=10,pady=8)
         self.draw()
         self.refresh_controls()
+        self.move_seconds.trace_add('write',lambda *args:self.invalidate())
 
     def refresh_controls(self):
         """One place for mode highlighting and initialization/motion gating."""
@@ -383,9 +431,10 @@ class ArmApp:
         state(getattr(self,'init_button',None),idle and not (self.initialized and self.mode=='K'))
         state(getattr(self,'manual_button',None),enabled and self.mode=='A')
         state(getattr(self,'calculate_button',None),enabled and self.mode=='I' and self.cal is not None)
-        state(getattr(self,'move_button',None),enabled and self.mode=='I' and self.preview is not None)
+        state(getattr(self,'move_button',None),enabled and self.mode=='I' and self.preview is not None and self.supports_timed_motion())
         for button in getattr(self,'grip_buttons',[]):state(button,enabled and self.mode!='K' and self.cal is not None)
         state(getattr(self,'save_button',None),enabled)
+        state(getattr(self,'duration_input',None),enabled and self.mode!='K')
         state(getattr(self,'reload_button',None),not self.busy and not waiting)
         for slider in getattr(self,'sliders',{}).values():state(slider,enabled and self.mode=='A')
         for entry in getattr(self,'entries',[]):state(entry,enabled and self.mode=='I')
@@ -406,9 +455,18 @@ class ArmApp:
             elif self.busy: hint=f'Moving: {len(getattr(self,"plan",[]))} waypoint(s) queued after the active command. STOP cancels the remaining plan.'
             elif self.mode=='K': hint='Knobs drive the arm. Choose APP or IK before requesting an upright move.'
             elif self.mode=='A': hint='Adjust raw servo sliders, then Send manual sliders. Choose IK to enter an XYZ target.'
-            elif self.preview is not None: hint='Preview is ready. Move Arm executes it; editing XYZ requires a new calculation.'
+            elif self.preview is not None and not self.supports_timed_motion(): hint='Upload the updated v2.0.0 Arduino sketch to enable coordinated movement.'
+            elif self.preview is not None: hint='Preview is ready. Move Arm sends one final target; Arduino generates the smooth motion.'
             else: hint='Enter XYZ in mm, then Calculate / Preview (or press Enter). This does not move the arm.'
             self.action_hint.set(hint)
+
+    def supports_timed_motion(self):
+        return getattr(self,'timed_supported',False) or getattr(getattr(self,'link',None),'supports_timed',False)
+
+    def chosen_duration(self,start,end):
+        try:value=float(self.move_seconds.get()) if hasattr(self,'move_seconds') else 2.
+        except ValueError:raise ValueError('Move time must be a number between 0.5 and 15 seconds') from None
+        return ik.motion_duration_ms(start,end,value)
 
     def feedback(self,message,kind='info'):
         self.feedback_message=message;self.feedback_kind=kind
@@ -428,7 +486,7 @@ class ArmApp:
         try:
             pose=self.start_pose()
             reference='Upright q=[90,90,0,0] deg' if self.cal else 'UNCALIBRATED: angles unknown'
-            self.init_text.set(reference+'; S1..S5: '+' '.join(map(str,pose)))
+            self.init_text.set(reference+'; S1..S5: '+' '.join(f'{float(v):g}' for v in pose))
         except ValueError as e:
             self.init_text.set('Upright unavailable: '+str(e))
 
@@ -485,10 +543,10 @@ class ArmApp:
             if self.initialized:
                 pose[CLAW]=self.positions[CLAW]  # do not release a held object
                 if self.cal:
-                    ik.validate_servo_leg(self.m,self.cal,self.positions,pose)
+                    ik.validate_coordinated_leg(self.m,self.cal,self.positions,pose)
                 self.invalidate()
                 self.log('Returning upright; keeping '+MODES[self.mode][0]+'.')
-                self.launch([pose])  # checked, gradual J move, not another INIT
+                self.launch([pose],command='T',duration_ms=self.chosen_duration(self.positions,pose)) if self.cal else self.launch([pose])
                 return
             self.invalidate()
             limits=' '.join(f'{lo} {hi}' for lo,hi in (self.limit(j) for j in range(5)))
@@ -503,7 +561,13 @@ class ArmApp:
             message='Cannot straighten/enable arm: '+str(e)
             self.log(message); self.feedback(message,'error')
 
-    def launch(self,poses,command='J'):
+    def launch(self,poses,command='J',duration_ms=None):
+        if command=='T':
+            if not self.supports_timed_motion():
+                raise ValueError('Upload the updated v2.0.0 Arduino sketch for smooth timed movement')
+            if duration_ms is None or not np.isfinite(duration_ms) or duration_ms!=int(duration_ms) or not 500<=duration_ms<=25000:
+                raise ValueError('Timed motion requires an integer duration of 500..25000 ms')
+        self.active_duration_ms=duration_ms
         self.stopped=False
         self.knob_baseline=list(self.knobs) if getattr(self,'knobs',None) else None
         self.plan=[list(p) for p in poses]; self.active=command
@@ -514,24 +578,38 @@ class ArmApp:
             self.busy=False; self.pending=None
             self.log('Command sequence finished (estimated position; no encoder feedback).'); self.refresh_controls(); return
         self.pending=self.plan.pop(0); self.started=time.monotonic()
-        self.send(self.active+' '+' '.join(map(str,self.pending)))
+        prefix=f'T {self.active_duration_ms}' if self.active=='T' else self.active
+        self.send(prefix+' '+' '.join(f'{float(v):.6g}' for v in self.pending))
 
     def poll(self):
         if self.link: self.link.tick()
         while not self.inbox.empty():
             line=self.inbox.get(); parts=line.split()
             if not parts: continue
-            if line.endswith('READY'):
+            if parts[0]=='FW' and len(parts)>=2:
+                self.firmware_version=parts[1];self.timed_supported='TIMED' in parts[2:]
+                self.pending_firmware=(self.firmware_version,self.timed_supported)
+                if hasattr(self,'version_info'):
+                    self.version_info.set(f'v{APP_VERSION} | Developed by {DEVELOPER} | Firmware {self.firmware_version}')
+            elif line.endswith('READY'):
                 self.ready=True; self.initialized=False; self.busy=False
+                if not getattr(self.link,'simulated',False):
+                    self.firmware_version,self.timed_supported=getattr(self,'pending_firmware',None) or ('unknown',False)
+                    self.pending_firmware=None
+                    if hasattr(self,'version_info'):
+                        suffix=self.firmware_version if self.timed_supported else 'unknown/older — upload v2.0.0 for smooth IK'
+                        self.version_info.set(f'v{APP_VERSION} | Developed by {DEVELOPER} | Firmware: {suffix}')
                 self.stopped=False; self.stop_pending=False; self.stop_acknowledged=False; self.knob_takeover_pending=False
                 self.plan=[]; self.pending=None; self.invalidate()
                 if getattr(self.link,'simulated',False):
+                    self.firmware_version=self.link.firmware_version
+                    if hasattr(self,'version_info'):self.version_info.set(f'v{APP_VERSION} | Developed by {DEVELOPER} | Emulator {self.firmware_version}')
                     self.log('Emulator READY. Preparing upright reference for direct IK preview.')
                     self.initialize()
                 else:
                     self.log('Arduino READY. Servos off; initialize explicitly.')
             elif parts[0]=='P' and len(parts)==6:
-                self.positions=[int(v) for v in parts[1:]]; self.update_position()
+                self.positions=[float(v) for v in parts[1:]]; self.update_position()
                 if getattr(self,'stop_pending',False) and self.stop_acknowledged:
                     self.stop_pending=False
                     self.log('STOP confirmed: command steps frozen; servos remain powered to hold position.')
@@ -625,10 +703,11 @@ class ArmApp:
                 self.feedback(f'No move prepared: {r["status"]}; position error {r["error"]*1000:.2f} mm. Try a reachable target or another clear starting pose.','error')
                 self.draw(q,target,r); return
             waypoints,miss=ik.plan_motion(self.m,self.cal,start,target,r,MAX_MISS_MM)
-            self.preview=dict(start=start,target=target,q=q,result=r,waypoints=waypoints)
+            duration=self.chosen_duration(start,waypoints[0])
+            self.preview=dict(start=start,target=target,q=q,result=r,waypoints=waypoints,duration_ms=duration)
             self.move_button.config(state='normal')
-            self.feedback(f'Preview ready — IK error {r["error"]*1000:.3f} mm; rounded-command miss {miss:.2f} mm. Move Arm to execute.','success')
-            self.log(f'Angles deg {np.rad2deg(q).round(2).tolist()}; rounded miss {miss:.2f} mm; {len(waypoints)} checked J waypoints. Preview only.')
+            self.feedback(f'Preview ready — IK error {r["error"]*1000:.3f} mm; rounded-command miss {miss:.2f} mm; move time {duration/1000:.2f} s. Move Arm to execute.','success')
+            self.log(f'Angles deg {np.rad2deg(q).round(2).tolist()}; rounded miss {miss:.2f} mm; one checked coordinated target; {duration/1000:.2f} s cubic motion. Preview only.')
             self.draw(q,target,r)
         except Exception as e:
             message='Cannot prepare move: '+str(e)
@@ -643,7 +722,8 @@ class ArmApp:
                 raise ValueError('Target changed; calculate again')
             if self.positions!=p['start']: raise ValueError('Arm moved; calculate again')
             waypoints,_=ik.plan_motion(self.m,self.cal,self.positions,p['target'],p['result'],MAX_MISS_MM)
-            self.invalidate(); self.launch(waypoints)
+            duration=self.chosen_duration(self.positions,waypoints[0])
+            self.invalidate(); self.launch(waypoints,command='T',duration_ms=duration)
         except Exception as e: self.fail(str(e))
 
     def manual(self):
@@ -657,7 +737,7 @@ class ArmApp:
         if self.busy or getattr(self,'stop_pending',False) or not self.initialized or self.mode=='K' or not self.cal: return
         self.invalidate(); pose=list(self.positions)
         pose[0]=self.cal.claw_closed if closed else self.cal.claw_open
-        try: self.launch([pose])
+        try: self.launch([pose],command='T',duration_ms=self.chosen_duration(self.positions,pose))
         except Exception as e: self.fail(str(e))
 
     def reload(self):

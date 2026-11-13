@@ -21,6 +21,7 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox
 
 import miniarm_calibration as mc
+from miniarm_version import APP_VERSION, DEVELOPER
 
 CALIBRATION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")
 ROWS = mc.RECOMMENDED_POINTS
@@ -91,7 +92,7 @@ def angle_ticks(name):
 class CalibrateApp:
     def __init__(self, root):
         self.root = root
-        root.title("miniArm Joint-angle Calibration for XYZ IK")
+        root.title(f"miniArm Calibration v{APP_VERSION} — {DEVELOPER}")
         root.resizable(True, True)
         self.entries = {}       # joint -> list of (servo Entry, angle Entry)
         self.ranges = {}        # joint or "claw" -> (min Entry, max Entry)
@@ -110,6 +111,7 @@ class CalibrateApp:
             self._build_joint(grid, name).grid(row=n // 2, column=n % 2, padx=6, pady=6, sticky="n")
 
         self._build_claw_and_buttons()
+        tk.Label(root,text=f'v{APP_VERSION} | Developed by {DEVELOPER} | Calibration editor — does not connect to or move the robot',fg='#475569').pack(pady=3)
         self.summary=tk.StringVar(value='Enter measured DH joint angles; Check, then Save.')
         self.summary_label=tk.Label(root,textvariable=self.summary,wraplength=1000,justify='left',font=('Segoe UI',9,'bold'))
         self.summary_label.pack(fill='x',padx=12,pady=5)

@@ -1,5 +1,30 @@
 # Python GUI integration validation
 
+## v2.0.0: visible identity and one final timed move (latest)
+
+A prominent colored banner distinguishes simulation (no physical movement) from
+real hardware. App/developer and firmware/emulator versions are displayed; the
+calibration editor also shows v2.0.0/Ngo Lab and its no-motion role. First hardware
+initialization is still explicit; APP/IK mode preservation and STOP gating remain.
+
+IK now sends one final calibrated target/duration, not iteration-history J moves.
+The updated Arduino sketch implements nonblocking cubic coordinated interpolation,
+sub-degree pulse output, fractional reports and STOP/resume without integer snaps.
+Python validates the actual coordinated path, split at every calibration knot,
+and rejects blocked paths. A capability announcement prevents older firmware from
+enabling the new timed movement. The GUI includes a minimum move-time field with
+an automatic peak raw-command-speed bound. The shared DH table/solver is unchanged.
+
+73 tests passed (16 core, 57 GUI/adapter/firmware-harness); 2 native Tk tests were
+skipped. Seven new tests cover one-target execution, synchronized progress,
+STOP/fractional resume, all-knot splitting, collision rejection despite safe
+endpoints, duration/old-firmware guards and version identity. The actual sketch
+compiled with g++ and ran in a host hardware/clock/serial stub harness, including
+sub-degree pulses, final acknowledgement, invalid command and speed guards.
+Python sources compile. This was not an AVR/Arduino IDE build, native Tk visual
+review or physical servo test. Upload and test on the actual board as described
+in [SMOOTH_MOTION.md](SMOOTH_MOTION.md). Earlier sections below describe prior revisions.
+
 ## Predictable upright and workflow feedback (latest)
 
 Post-initialization upright now preserves APP or IK mode and the claw command.

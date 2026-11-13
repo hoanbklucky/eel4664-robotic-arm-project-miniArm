@@ -110,13 +110,14 @@ class PipelineTests(unittest.TestCase):
             app.preview=None;app.knobs=None;app.knob_baseline=None;app.mode='A';app.started=0
             app.sliders={i:Mock() for i in range(5)};app.readout=Mock();app.move_button=Mock();app.log=Mock()
             app.commanded=[90]*5
-            app.poll();app.initialize();app.poll();self.assertTrue(app.initialized)
+            app.poll();self.assertTrue(app.initialized)
             app.set_mode('I');app.poll();before=list(app.positions)
             app.entries=[SimpleNamespace(get=lambda value=str(x):value) for x in [100,100,50]]
             app.calculate();self.assertIsNotNone(app.preview,app.log.call_args_list)
             self.assertEqual(app.positions,before);self.assertFalse(app.busy)
             app.move();self.assertTrue(app.busy)
             for _ in range(2000):
+                if app.link.timed is not None:app.link.timed[2]-=.05
                 app.link.last_step=0;app.poll()
                 if not app.busy:break
             self.assertFalse(app.busy)

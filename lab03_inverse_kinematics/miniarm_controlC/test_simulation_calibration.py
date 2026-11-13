@@ -46,7 +46,7 @@ class SimulationCalibrationTests(unittest.TestCase):
         self.assertGreater(len(poses),0);self.assertLess(miss,gui.MAX_MISS_MM)
         previous=start
         for pose in poses:
-            ik.validate_servo_leg(m,cal,previous,pose)
+            ik.validate_coordinated_leg(m,cal,previous,pose)
             previous=pose
 
     def test_reproduces_screenshot_failure_without_altering_legacy_mapping(self):

@@ -1,5 +1,7 @@
 > **Complete student workflow:** [3D IK lab instructions](STUDENT_GUIDE.md) cover
 
+**v2.0.0:** [Smooth final-target motion, firmware update and simulation/version display](SMOOTH_MOTION.md). Update Python and the Arduino sketch together; keep your measured calibration.
+
 See the [MATLAB/Python/servo pipeline audit](PYTHON_MATLAB_AUDIT.md) for the shared frames, DH table, calibration equations and verification results.
 > MATLAB verification, Python XYZ preview, calibration, Arduino execution and
 > the required [report template](Lab03_Report_Template.docx).

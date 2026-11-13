@@ -43,7 +43,7 @@ def servo_to_q(cal, pose):
 
 def q_to_servo(cal,q,claw):
     deg=np.rad2deg(q)
-    pose=[int(claw),0,0,0,0]
+    pose=[float(claw),0,0,0,0]
     for name,value in zip(JOINTS,deg):
         pose[mc.SERVO_INDEX[name]]=cal.q_to_servo(name,value)
     if any(not lo<=s<=hi for s,(lo,hi) in zip(pose,cal.all_limits())):
@@ -74,7 +74,8 @@ def sequential_states(start,end):
     cur=list(start)
     for index in (4,3,2,1,0):
         while cur[index]!=end[index]:
-            cur[index]+=1 if end[index]>cur[index] else -1
+            delta=end[index]-cur[index]
+            cur[index]=end[index] if abs(delta)<=1 else cur[index]+np.sign(delta)
             yield cur.copy()
 
 def validate_servo_leg(m,cal,start,end):
@@ -105,24 +106,60 @@ def validate_servo_leg(m,cal,start,end):
                 qa=qb
         previous=state
 
+def validate_coordinated_leg(m,cal,start,end):
+    """Check the exact common-progress raw-command path used by firmware T.
+
+    Cubic easing changes timing, not this path. Split at every calibration knot
+    crossed by ANY channel. Between knots q(raw) is affine, so edge_clear checks
+    continuous joint interpolation exactly for the configured collision model.
+    """
+    start=np.asarray(start,dtype=float);end=np.asarray(end,dtype=float)
+    if start.shape!=(5,) or end.shape!=(5,) or not np.isfinite([start,end]).all():
+        raise ValueError('Servo poses must contain five finite raw values')
+    for pose in (start,end):
+        if any(not lo<=s<=hi for s,(lo,hi) in zip(pose,cal.all_limits())):
+            raise ValueError('Servo pose outside calibrated raw limits')
+        m.check_q(servo_to_q(cal,pose),limits=True)
+    fractions={0.,1.};delta=end-start
+    for name in JOINTS:
+        index=mc.SERVO_INDEX[name]
+        if delta[index]:
+            for raw,_ in cal.points[name]:
+                f=(raw-start[index])/delta[index]
+                if 0<f<1:fractions.add(float(f))
+    previous=servo_to_q(cal,start)
+    if clearance(m,previous)[0]<=0:
+        raise ValueError('Starting pose collides with configured model')
+    for f in sorted(fractions)[1:]:
+        current=servo_to_q(cal,start+f*delta)
+        m.check_q(current,limits=True)
+        if not edge_clear(m,previous,current):
+            raise ValueError('Direct coordinated path violates configured clearance; choose an intermediate XYZ target')
+        previous=current
+
+
+def motion_duration_ms(start,end,requested_seconds=2.):
+    """Cubic peak speed <=45 raw units/s; 0.5..15 s user duration is a minimum."""
+    if not np.isfinite(requested_seconds) or not .5<=requested_seconds<=15:
+        raise ValueError('Move time must be between 0.5 and 15 seconds')
+    delta=float(np.max(np.abs(np.asarray(end)-np.asarray(start))))
+    if not np.isfinite(delta):raise ValueError('Invalid servo target')
+    return int(np.ceil(max(requested_seconds*1000,1500*delta/45)))
+
+
 def plan_motion(m,cal,start,target_mm,result,max_miss_mm=10):
-    """Round accepted IK poses, check J execution path, preserve claw opening."""
+    """Send only the final IK pose; validate the firmware's coordinated path."""
     if not result['success']:
         raise ValueError('IK failed: '+result['status'])
-    if not np.allclose(servo_to_q(cal,start),result['history'][0],atol=1e-10):
+    if not np.allclose(servo_to_q(cal,start),result['history'][0],atol=1e-10,rtol=0):
         raise ValueError('Arm moved since calculation; calculate again')
-    waypoints=[]; previous=list(start)
-    for q in result['history'][1:]:
-        pose=q_to_servo(cal,q,start[0])
-        if pose!=previous:
-            validate_servo_leg(m,cal,previous,pose)
-            waypoints.append(pose); previous=pose
-    final_q=servo_to_q(cal,previous)
-    m.check_q(final_q,limits=True)
+    final=q_to_servo(cal,result['history'][-1],start[0])
+    validate_coordinated_leg(m,cal,start,final)
+    final_q=servo_to_q(cal,final)
     miss=float(np.linalg.norm(position(m,final_q)*1000-target_mm))
     if not np.isfinite(miss) or miss>max_miss_mm:
         raise ValueError(f'After rounding: error {miss:.2f} mm exceeds {max_miss_mm:g} mm')
-    return waypoints,miss
+    return [final],miss
 
 def demo_calibration():
     """Invented mapping for the OFFLINE emulator, never a hardware calibration.

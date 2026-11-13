@@ -32,13 +32,13 @@ class StartupTests(unittest.TestCase):
 
     def test_already_initialized_checks_path_and_preserves_claw(self):
         app=self.app();app.initialized=True
-        with patch.object(ik,'validate_servo_leg') as check:
+        with patch.object(ik,'validate_coordinated_leg') as check:
             app.initialize()
             target=app.start_pose();target[0]=75
             check.assert_called_once_with(app.m,app.cal,app.positions,target)
-            app.launch.assert_called_once_with([target])
+            app.launch.assert_called_once_with([target],command='T',duration_ms=ik.motion_duration_ms(app.positions,target))
         app=self.app();app.initialized=True
-        with patch.object(ik,'validate_servo_leg',side_effect=ValueError('blocked path')):
+        with patch.object(ik,'validate_coordinated_leg',side_effect=ValueError('blocked path')):
             app.initialize()
         app.send.assert_not_called();app.launch.assert_not_called()
 
