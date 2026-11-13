@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="560" viewBox="0 0 1500 560">
+<defs>
+ <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z" fill="context-stroke"/></marker>
+ <style>text{font-family:Arial,sans-serif;fill:#172033}.title{font-size:28px;font-weight:bold}.head{font-size:21px;font-weight:bold}.body{font-size:17px}.small{font-size:15px}.panel{fill:#f8fafc;stroke:#dbe3ec;stroke-width:2}.ref{stroke:#94a3b8;stroke-width:3;stroke-dasharray:7 5;fill:none}.arc{stroke:#2563eb;stroke-width:3;fill:none;marker-end:url(#arrow)}</style>
+</defs>
+<rect width="1500" height="560" fill="white"/>
+<text x="25" y="39" class="title">Measure joint angles q for calibration — targets still use XYZ</text>
+<text x="25" y="72" class="body">A protractor measures a joint rotation. It does not change how the target position is specified.</text>
+<rect x="20" y="100" width="470" height="440" rx="16" class="panel"/>
+<rect x="510" y="100" width="470" height="440" rx="16" class="panel"/>
+<rect x="1000" y="100" width="480" height="440" rx="16" class="panel"/>
+<text x="45" y="137" class="head">Base / S5 — look from above</text>
+<line x1="240" y1="320" x2="420" y2="320" stroke="#d52b36" stroke-width="3" marker-end="url(#arrow)"/>
+<line x1="240" y1="320" x2="240" y2="185" stroke="#168947" stroke-width="3" marker-end="url(#arrow)"/>
+<line x1="240" y1="320" x2="65" y2="320" class="ref"/>
+<circle cx="240" cy="320" r="8" fill="#172033"/>
+<path d="M310 320 A70 70 0 0 0 240 250" class="arc"/>
+<text x="300" y="278" class="body" style="fill:#2563eb">+90°</text>
+<text x="322" y="350" class="body">0°: right (+X)</text>
+<text x="150" y="172" class="body">90°: forward (+Y)</text>
+<text x="48" y="350" class="body">180°: left</text>
+<text x="45" y="436" class="body">References are viewed from behind</text>
+<text x="45" y="466" class="body">at the Arduino board and control knobs.</text>
+<text x="535" y="137" class="head">Shoulder / S4 — side view</text>
+<line x1="730" y1="350" x2="920" y2="350" class="ref"/>
+<line x1="730" y1="350" x2="730" y2="177" class="ref"/>
+<line x1="730" y1="350" x2="810" y2="211.4" stroke="#7048a5" stroke-width="10"/>
+<circle cx="730" cy="350" r="8" fill="#172033"/>
+<path d="M790 350 A60 60 0 0 0 760 298" class="arc"/>
+<text x="804" y="286" class="body" style="fill:#2563eb">q = +60°</text>
+<text x="830" y="379" class="body">0° forward</text>
+<text x="650" y="168" class="body">90° upright</text>
+<text x="535" y="436" class="body">Measure the upper-arm centerline</text>
+<text x="535" y="466" class="body">from horizontal forward, positive up.</text>
+<text x="1025" y="137" class="head">Elbow / wrist — relative angle</text>
+<line x1="1045" y1="270" x2="1195" y2="270" stroke="#334155" stroke-width="10"/>
+<line x1="1195" y1="270" x2="1435" y2="270" class="ref"/>
+<line x1="1195" y1="270" x2="1312" y2="387" stroke="#7048a5" stroke-width="10"/>
+<circle cx="1195" cy="270" r="8" fill="#172033"/>
+<path d="M1250 270 A55 55 0 0 1 1233.9 308.9" class="arc"/>
+<text x="1265" y="336" class="body" style="fill:#2563eb">q = −45°</text>
+<text x="1027" y="238" class="small">Previous link →</text>
+<text x="1215" y="238" class="small">Its forward extension: q = 0°</text>
+<text x="1025" y="436" class="body">Downward bending is negative.</text>
+<text x="1025" y="466" class="small">Do not enter the 135° inside angle in this example.</text>
+<text x="1025" y="502" class="small">Rotate the reference with the preceding link.</text>
+</svg>

@@ -125,4 +125,7 @@ def demo_calibration():
     data=dict(joints={},claw=dict(open=40,closed=90,min=40,max=90))
     for name in JOINTS:
         data['joints'][name]=dict(points=[[0,0],[90,90],[180,180]],min=0,max=180)
-    return mc.Calibration(data)
+    # Preserve the same synthetic raw-command mapping, but declare direct DH q.
+    # This is for simulation only; it is never written as measured calibration.
+    return mc.Calibration(mc.Calibration(data).as_joint_data())
+

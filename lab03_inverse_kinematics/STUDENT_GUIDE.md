@@ -199,36 +199,85 @@ A–C are candidate trials; calibrated limits and starting posture can cause
 rejection. Record failures and use an instructor-approved nearby replacement
 for hardware if needed. A local solver failure does not prove that no solution exists.
 
-## 6. Upload the Arduino sketch and calibrate
+## 6. Understand calibration, then calibrate
 
-1. Open `miniarm_controlC/miniarm_controlC.ino` in Arduino IDE. Select your board
-   and port. Use Servo and the lab's previously specified FastLED **3.10.3**.
-   Upload, then close Serial Monitor. This sketch does not use EEPROM.
-2. Set the measured `GEOMETRY` in `miniarm_controlC.py`.
-3. Run `python miniarm_controlC.py --port COM11`, replacing COM11 with your port.
-   Hardware mode does not silently fall back to simulation.
-4. Connection leaves servos disabled. Read the displayed S1–S5 startup commands.
-   With servo power off, arrange the arm near the corresponding startup pose
-   before applying power and clicking **Initialize at startup pose**. INIT
-   attaches servos at those commands immediately; it is not a checked motion
-   from an unknown physical pose. Without calibration its commands are all 90.
-5. In **APP CONTROL**, adjust the sliders and click **Send manual sliders**.
-   Run `python miniarm_calibrate.py` alongside it. Measure five points per joint
-   across the usable range, and enter safe min/max commands and claw settings.
-6. Click **Check**, fix errors, Save, and **Reload calibration** in the GUI.
-   Reloading requires explicit initialization again; it does not move the arm.
+### Why do we need it?
 
-| Joint | Calibrator measurement | Conversion to mathematical joint angle |
+IK calculates mathematical joint angles; servos accept raw command numbers.
+Because mounting zeros, direction and scale can differ, sending a number such
+as 90 does not guarantee a physical joint angle of 90 degrees. Calibration
+measures that relationship for your arm:
+
+**Desired XYZ → 3D IK → joint angles q → calibration → raw servo commands.**
+
+The target remains **X, Y, Z in millimetres**. Joint-angle calibration is still
+needed for XYZ IK. It does not require polar target coordinates or polar paper.
+A protractor is simply one way to measure an angle; use an XY grid/rulers and a
+vertical ruler later to measure the actual target/TCP position.
+
+### What exactly do we measure?
+
+Each row in the calibrator is one **(applied raw servo command, measured DH joint
+angle q)** pair. The updated form uses the same q convention as MATLAB directly:
+
+| Joint / GUI slider | Channel | What the measured q means |
 |---|---|---|
-| Base | 90° forward, increasing toward left | q_base = measured angle |
-| Shoulder | 90° upright, increasing forward | q_shoulder = 180° − measured angle |
-| Elbow | 90° aligned, increasing forward bend | q_elbow = 90° − measured angle |
-| Wrist | 90° aligned, increasing forward bend | q_wrist = 90° − measured angle |
+| Base | S5 | 0° right, 90° forward, 180° left; measured from above |
+| Shoulder / Arm | S4 | 0° horizontal forward, 90° upright; measured from the side |
+| Elbow / Forearm | S3 | 0° aligned with the upper arm's forward extension; down-forward bend is negative |
+| Wrist | S2 | 0° aligned with the forearm's forward extension; down-forward bend is negative |
+| Claw opening | S1 | Record raw open/closed commands, not a positioning joint angle |
 
-Use the instructor-reviewed collision settings. Their capsule dimensions are
-approximate, and cameras, held objects, fingers and nearby equipment are not
-fully represented. APP and KNOB controls bypass IK collision checking. You are
-not required to develop or modify collision-checking code.
+![Protractor references for DH joint calibration: base angle above, shoulder pitch from horizontal, and signed elbow/wrist bend](miniarm_controlC/images/calibration_joint_angles.svg)
+
+At elbow/wrist, align the protractor with the previous link's **forward
+extension**, not the ray pointing back to the previous joint. A 45° downward
+bend means q=-45°, not the 135° interior angle. Rotate this reference with the
+preceding link if it is tilted.
+
+### Learn one mapping before collecting the full table
+
+Have the instructor demonstrate one joint first. For an illustrative wrist,
+raw commands 60, 80, 100, 120, 140 might produce q=30°,15°,0°,-15°,-30°.
+Then q=-22.5° needs raw command 130 by interpolation. **These are made-up
+example values, not settings to copy.** First observe two pairs to understand
+the mapping, then collect the lab's five points per positioning joint.
+
+### Hardware procedure
+
+Read the [calibration walkthrough](CALIBRATION_GUIDE.md) before enabling servos.
+It explains startup, measurement tools, safe ranges and independent validation.
+
+1. Upload `miniarm_controlC/miniarm_controlC.ino` using the correct board/port,
+   Servo and FastLED 3.10.3. Close Serial Monitor and enter measured GEOMETRY.
+2. Start `python miniarm_controlC.py --port COM11` with your port, and run
+   `python miniarm_calibrate.py` alongside it. Click **Why calibrate? / How to
+   measure** in the calibration window. That form does not move the arm.
+3. Review the displayed S1–S5 startup commands with the instructor and establish
+   the first pose before clicking Initialize. Without calibration, raw commands
+   are all 90 but their physical angles are unknown. INIT attaches servos
+   immediately; it does not plan from a measured initial pose. Do not assume
+   that an uncalibrated estimate identifies the physical starting configuration.
+4. Select APP CONTROL. Change one slider, click **Send manual sliders**, wait
+   for completion, and record its applied raw command and independently measured
+   q. A slider change without sending is not a measurement. Keep the other
+   joints unchanged. Repeat at five positions across its usable range.
+5. Enter measured/instructor-established **raw** safe limits for each channel and
+   raw claw open/closed settings. The entire command range 0–180 is not assumed
+   mechanically safe; the new form leaves unknown limits blank.
+6. Click Check, resolve errors, Save, and Reload calibration in the controller.
+   Reloading does not move the arm and requires explicit initialization again.
+   Validate an extra pose independently before collecting the XYZ results below.
+
+New files declare `angle_convention=joint`. Older calibration files are still
+supported and converted for display without changing their command mapping.
+Update the controller/calibration scripts together using the latest repository;
+see the walkthrough for details. Keep your own measured calibration.json.
+
+APP and KNOB controls bypass IK collision checking. The provisional capsules
+do not fully model the camera, fingers, held objects or surrounding equipment.
+Use instructor guidance while calibrating; no collision-code development is
+required for this lab.
 
 ## 7. Validate FK and execute XYZ targets
 

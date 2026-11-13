@@ -1,5 +1,26 @@
 # Python GUI integration validation
 
+## Calibration explanation and direct joint-angle entry
+
+The calibration form now accepts DH joint q in degrees directly, including
+negative elbow/wrist angles and 0 degrees for aligned links. Its help explains
+why raw commands differ from joint angles, how to measure a pair, and why XYZ
+targets still require joint-angle calibration. New JSON files declare
+`angle_convention=joint`; files without metadata retain the legacy convention.
+Loading a legacy file into the form converts its table for display and saving.
+
+Checks executed for this revision:
+
+- **34 noninteractive tests passed**: 16 numerical, 6 integration, 6 preview
+  projection/Canvas and 6 calibration tests.
+- Calibration tests compare legacy and converted mappings over every integer
+  raw command 0..180 for all four joints, round trips, raw limits, startup
+  commands and model limits. They also cover signed-angle form data, negative
+  plot labels, the worked wrist example and rejection of nonfinite inputs.
+- Python source compiles. Full native Tk interaction and physical measurement
+  accuracy were not tested here; the optional preview Tk test was skipped
+  because no display connection is available. No hardware was commanded.
+
 ## Current preview projection correction
 
 The prior hard-coded screen projection had camera-normal Z below zero and
@@ -66,6 +87,7 @@ python -m pip install -r requirements.txt
 python -m unittest discover -s ../python -v
 python -m unittest discover -s . -p test_integration.py -v
 python -m unittest discover -s . -p test_preview.py -v
+python -m unittest discover -s . -p test_calibration.py -v
 python miniarm_controlC.py --simulate
 ```
 

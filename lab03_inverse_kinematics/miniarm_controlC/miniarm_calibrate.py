@@ -5,9 +5,9 @@ miniarm_calibrate.py  -  enter your arm's calibration and save calibration.json
 This program does not talk to the arm. Run it next to miniarm_controlC.py:
 
   1. In miniarm_controlC.py, use APP CONTROL to move ONE joint at a time.
-  2. Measure that joint's angle relative to the previous link on the polar paper:
-       90 = in line with the previous link; bending forward (base: turning left) = larger.
-  3. Type the servo value (from the controlC "Servo values" readout) and the angle here.
+  2. Measure the DH joint angle q using a protractor or a signed-angle tool.
+       Base 90 forward; shoulder 90 upright; elbow/wrist 0 when aligned.
+  3. Type the APPLIED raw servo command and measured q here, in degrees.
      Five points per joint, spread across its range.
   4. Fill in each joint's safe range and the claw's open/closed values.
   5. Click Save, then "Reload calibration" in miniarm_controlC.py.
@@ -16,6 +16,7 @@ The file is saved next to this program as calibration.json.
 """
 
 import os
+import math
 import tkinter as tk
 from tkinter import scrolledtext
 
@@ -25,28 +26,82 @@ CALIBRATION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cal
 ROWS = mc.RECOMMENDED_POINTS
 
 JOINT_HELP = {
-    "base":    "relative to straight ahead: 90 = ahead, larger = to the arm's left",
-    "arm":     "relative to the base post: 90 = straight up, larger = forward",
-    "forearm": "relative to the arm link: 90 = in line, larger = bent forward",
-    "wrist":   "relative to the forearm: 90 = in line, larger = bent forward",
+    "base":    "BASE / S5: q = 0 right, 90 forward, 180 left",
+    "arm":     "SHOULDER / S4: q = 0 horizontal forward, 90 upright",
+    "forearm": "ELBOW / S3: q = 0 aligned; negative bends down",
+    "wrist":   "WRIST / S2: q = 0 aligned; negative bends down",
 }
-PLOT_W, PLOT_H, PAD = 230, 170, 26
+PLOT_W, PLOT_H, PAD = 250, 190, 34
+
+MEASUREMENT_HELP = '''WHY CALIBRATE?
+The 3D target is XYZ in millimetres. IK calculates four DH joint angles q.
+The servos accept raw command values. A raw value of 90 does not guarantee
+a physical joint angle of 90 degrees: mounting, direction and scale differ.
+Calibration records which raw command produces which measured joint angle.
+
+TARGET XYZ -> 3D IK -> JOINT ANGLES q -> CALIBRATION -> RAW SERVO COMMANDS
+
+WHAT TO ENTER
+Each row is ONE pair: (applied raw command, measured joint q in degrees).
+These are not (radius, angle) target coordinates and not XYZ measurements.
+The plots are ordinary command-versus-joint-angle graphs, not workspace maps.
+Printed polar paper is not required. A protractor is simply an angle-measuring tool.
+
+JOINT REFERENCES (view from behind at the Arduino/knobs)
+Base/S5: 0 right, 90 forward, 180 left; measure from above.
+Shoulder/S4: 0 horizontal forward, 90 vertically up; measure from the side.
+Elbow/S3: 0 when forearm continues along the upper-arm direction.
+Wrist/S2: 0 when the tool continues along the forearm direction.
+Elbow/wrist down-forward bending is negative; up-backward bending is positive.
+Align a protractor with the preceding link's FORWARD EXTENSION, not the ray
+pointing back to the preceding joint. See ../CALIBRATION_GUIDE.md for sketches.
+
+ONE PAIR AT A TIME
+1. Read the startup instructions and initialize with instructor guidance.
+2. Select APP CONTROL in the controller; keep other joint sliders unchanged.
+3. Set this joint's slider, click Send manual sliders, and wait for completion.
+4. Read its applied raw command and independently measure the physical q.
+5. Enter that pair here. Moving a slider without sending is not a measurement.
+Start with two pairs in an instructor demonstration. For the lab collect five
+spread across the usable range, without driving into mechanical stops.
+
+EXAMPLE ONLY - NOT SETTINGS FOR YOUR ARM
+Raw commands 60, 80, 100, 120, 140 might measure wrist q = 30, 15, 0, -15, -30.
+Then q = -22.5 degrees corresponds to raw command 130 by interpolation.
+Your arm's measurements will differ. Never copy example numbers as calibration.
+
+SAFE RANGES AND CLAW
+Safe min/max are RAW commands for your measured usable range, not q angles.
+Do not assume the entire controller range 0..180 is mechanically usable.
+S1 claw open/closed values are raw commands; claw opening is separate from wrist q.
+
+SAVE AND USE
+Click Check, resolve errors, Save, then Reload calibration in the controller.
+Reloading does not move the arm; it requires explicit initialization again.
+New files declare angle_convention=joint. Old files are converted for display
+and remain readable by the updated controller. Update the controller, calibration
+module and this form together. Use XYZ/rulers for target-position validation.
+'''
+
+
+def angle_ticks(name):
+    return (0,90,180) if name in ('base','arm') else (-180,-90,0,90,180)
 
 
 class CalibrateApp:
     def __init__(self, root):
         self.root = root
-        root.title("miniArm Calibration")
+        root.title("miniArm Joint-angle Calibration for XYZ IK")
         root.resizable(False, False)
         self.entries = {}       # joint -> list of (servo Entry, angle Entry)
         self.ranges = {}        # joint or "claw" -> (min Entry, max Entry)
         self.plots = {}
 
-        tk.Label(root, justify="left", font=("Segoe UI", 9), padx=12, pady=8, text=(
-            "Move one joint at a time with APP CONTROL in miniarm_controlC.py, measure its angle on the polar "
-            "paper relative to the previous link (90 = in line), and type the servo value and angle below.\n"
-            "Five points per joint, spread across its range. Then Save, and click \"Reload calibration\" "
-            "in miniarm_controlC.py.")).pack(anchor="w")
+        tk.Label(root, justify="left", font=("Segoe UI", 9), padx=12, pady=8, wraplength=1000, text=(
+            "XYZ targets -> IK joint angles q -> calibrated raw servo commands. This form measures JOINT angles; enter XYZ in the controller.\n"
+            "In APP CONTROL, send one joint's command, wait, measure its DH angle q, then record the pair. Elbow/wrist: 0 = aligned; down = negative.\n"
+            "Use a protractor or signed-angle tool; polar paper is not required. Read Why / How first. Collect five pairs per joint, then Check and Save.")).pack(anchor="w")
+        tk.Button(root,text='Why calibrate? / How to measure',command=self.show_help).pack(anchor='w',padx=12,pady=(0,4))
 
         grid = tk.Frame(root, padx=8)
         grid.pack()
@@ -64,13 +119,13 @@ class CalibrateApp:
 
     # ------------------------------------------------------------------ layout
     def _build_joint(self, parent, name):
-        frame = tk.LabelFrame(parent, text=f"  {name.upper()}  ({JOINT_HELP[name]})  ",
+        frame = tk.LabelFrame(parent, text=f"  {JOINT_HELP[name]}  ",
                               font=("Segoe UI", 9, "bold"), padx=8, pady=6)
         table = tk.Frame(frame)
         table.grid(row=0, column=0, sticky="n")
         tk.Label(table, text="Point", font=("Segoe UI", 8)).grid(row=0, column=0)
-        tk.Label(table, text="Servo", font=("Segoe UI", 8)).grid(row=0, column=1)
-        tk.Label(table, text="Angle (deg)", font=("Segoe UI", 8)).grid(row=0, column=2)
+        tk.Label(table, text="Raw command", font=("Segoe UI", 8)).grid(row=0, column=1)
+        tk.Label(table, text="Joint q (deg)", font=("Segoe UI", 8)).grid(row=0, column=2)
         rows = []
         for r in range(ROWS):
             tk.Label(table, text=str(r + 1), font=("Segoe UI", 8)).grid(row=r + 1, column=0)
@@ -85,7 +140,7 @@ class CalibrateApp:
 
         rng = tk.Frame(table)
         rng.grid(row=ROWS + 1, column=0, columnspan=3, pady=(8, 0))
-        tk.Label(rng, text="Safe range (shaded)", font=("Segoe UI", 8)).pack(side="left")
+        tk.Label(rng, text="Safe RAW range", font=("Segoe UI", 8)).pack(side="left")
         lo = tk.Entry(rng, width=5, justify="center")
         hi = tk.Entry(rng, width=5, justify="center")
         lo.pack(side="left", padx=2)
@@ -124,6 +179,12 @@ class CalibrateApp:
                  padx=14).pack(anchor="w")
 
     # ------------------------------------------------------------------ messages
+    def show_help(self):
+        window=tk.Toplevel(self.root);window.title('Why calibration is needed for XYZ IK')
+        body=scrolledtext.ScrolledText(window,width=96,height=32,wrap='word',font=('Segoe UI',10))
+        body.pack(fill='both',expand=True,padx=12,pady=12)
+        body.insert('1.0',MEASUREMENT_HELP);body.config(state='disabled')
+
     def say(self, text, tag=None, clear=False):
         self.messages.config(state="normal")
         if clear:
@@ -142,12 +203,14 @@ class CalibrateApp:
             if not text:
                 return None
             try:
-                return float(text)
+                value=float(text)
+                if not math.isfinite(value):raise ValueError
+                return value
             except ValueError:
-                problems.append(f"{label}: '{text}' is not a number")
+                problems.append(f"{label}: '{text}' must be a finite number")
                 return None
 
-        data = {"joints": {}, "claw": {}}
+        data = {"angle_convention": "joint", "joints": {}, "claw": {}}
         for name in mc.JOINTS:
             points = []
             for r, (s_e, a_e) in enumerate(self.entries[name]):
@@ -210,15 +273,13 @@ class CalibrateApp:
 
     def load(self):
         if not os.path.exists(CALIBRATION_FILE):
-            for name in mc.JOINTS:                     # sensible starting safe ranges
-                for e, v in zip(self.ranges[name], (0, 180)):
-                    e.delete(0, "end")
-                    e.insert(0, str(v))
+            for name in mc.JOINTS:
                 self.draw(name)
-            self.say("No calibration.json yet: fill in the form and Save.", clear=True)
+            self.say("No calibration.json yet. Read Why / How. Enter measured q and instructor-reviewed RAW safe limits; 0..180 is not assumed safe.", clear=True)
             return
         try:
-            data = mc.Calibration.load(CALIBRATION_FILE).data
+            loaded = mc.Calibration.load(CALIBRATION_FILE)
+            data = loaded.as_joint_data()
         except mc.CalibrationError as e:
             self.say(str(e), "error", clear=True)
             return
@@ -226,11 +287,13 @@ class CalibrateApp:
         for name in mc.JOINTS:
             self.draw(name)
         self.say(f"Loaded {CALIBRATION_FILE}.", "ok", clear=True)
+        if loaded.angle_convention=='legacy':
+            self.say('Older 90-reference table converted to DH q for display. Save writes angle_convention=joint with the same command mapping.', 'warn')
 
     @staticmethod
     def _as_ints(data):
         """Servo values are whole numbers; angles may have decimals."""
-        out = {"joints": {}, "claw": {k: (int(round(v)) if v is not None else None)
+        out = {"angle_convention": data.get('angle_convention','legacy'), "joints": {}, "claw": {k: (int(round(v)) if v is not None else None)
                                      for k, v in data["claw"].items()}}
         for name, j in data["joints"].items():
             out["joints"][name] = {
@@ -242,30 +305,36 @@ class CalibrateApp:
 
     # ------------------------------------------------------------------ plot
     def draw(self, name):
-        """Servo value (across) vs measured angle (up), with the safe range shaded."""
+        """Raw command versus DH joint q; this is not a polar target plot."""
         c = self.plots[name]
         c.delete("all")
-        x = lambda s: PAD + s / 180 * (PLOT_W - PAD - 8)
-        y = lambda a: PLOT_H - PAD + 4 - a / 180 * (PLOT_H - PAD - 4)
+        ticks=angle_ticks(name);amin,amax=ticks[0],ticks[-1]
+        x = lambda s: 40 + s / 180 * (PLOT_W - 48)
+        y = lambda a: PLOT_H - 42 - (a-amin)/(amax-amin) * (PLOT_H - 68)
+        c.create_text(PLOT_W/2,10,text='Measured joint q (deg)',font=('Segoe UI',7),fill='#495057')
 
         lo, hi = self.ranges[name]
         try:
-            c.create_rectangle(x(float(lo.get())), y(180), x(float(hi.get())), y(0),
+            limits=[float(lo.get()),float(hi.get())]
+            if not all(math.isfinite(v) for v in limits):raise ValueError
+            c.create_rectangle(x(limits[0]), y(amax), x(limits[1]), y(amin),
                                fill="#e7f5ff", outline="")
         except ValueError:
             pass
+        for v in ticks:
+            reference=mc.REFERENCE_Q[name]
+            c.create_line(x(0), y(v), x(180), y(v), fill="#adb5bd" if v == reference else "#e9ecef",
+                          dash=(3, 3) if v == reference else ())
+            c.create_text(35, y(v), text=str(v), anchor="e", font=("Segoe UI", 7), fill="#868e96")
         for v in (0, 90, 180):
-            c.create_line(x(0), y(v), x(180), y(v), fill="#adb5bd" if v == 90 else "#e9ecef",
-                          dash=(3, 3) if v == 90 else ())
-            c.create_text(PAD - 4, y(v), text=str(v), anchor="e", font=("Segoe UI", 7), fill="#868e96")
-        for v in (0, 90, 180):
-            c.create_text(x(v), PLOT_H - 8, text=str(v), font=("Segoe UI", 7), fill="#868e96")
-        c.create_text(x(45), PLOT_H - 8, text="servo value", font=("Segoe UI", 7), fill="#868e96")
+            c.create_text(x(v), PLOT_H - 27, text=str(v), font=("Segoe UI", 7), fill="#868e96")
+        c.create_text(PLOT_W/2, PLOT_H - 10, text="Raw servo command", font=("Segoe UI", 7), fill="#868e96")
 
         pts = []
         for s_e, a_e in self.entries[name]:
             try:
-                pts.append((float(s_e.get()), float(a_e.get())))
+                pair=(float(s_e.get()), float(a_e.get()))
+                if all(math.isfinite(v) for v in pair):pts.append(pair)
             except ValueError:
                 pass
         pts.sort()
@@ -279,3 +348,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     CalibrateApp(root)
     root.mainloop()
+

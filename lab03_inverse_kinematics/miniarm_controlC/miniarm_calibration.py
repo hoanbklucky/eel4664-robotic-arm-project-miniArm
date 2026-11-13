@@ -5,22 +5,22 @@ miniarm_calibration.py  -  reading, checking and using calibration.json
 Shared by miniarm_calibrate.py (which writes the file) and miniarm_controlC.py
 (which reads it), so both convert between servo values and angles the same way.
 
-What a calibration is
----------------------
-For each joint, a few (servo value, measured angle) pairs. Angles are measured
-RELATIVE TO THE PREVIOUS LINK, with 90 = in line with it:
-    base    : relative to straight ahead   (90 = straight ahead, larger = to the arm's left)
-    arm     : relative to the base post    (90 = straight up,    larger = bent forward)
-    forearm : relative to the arm link     (90 = in line,        larger = bent forward)
-    wrist   : relative to the forearm      (90 = in line,        larger = bent forward)
-Between points the angle is a straight line (piecewise linear), so the curve passes
-through every measured point.
+New files declare angle_convention="joint": stored angles are the DH angles
+in DEGREES (base 90 forward, shoulder 90 upright, elbow/wrist 0 aligned).
+Older files without this field use the former measured-angle convention
+(90 aligned; increasing forward). They remain supported without remeasurement.
+as_joint_data() converts an old table for display/editing in the updated form,
+preserving every raw-command-to-joint-angle mapping and all raw safe limits.
+
+Calibration maps raw servo commands to measured JOINT angles, independently of
+whether a target is specified as XYZ. It does not store polar target positions.
 
 Each joint also has a safe range (min, max servo value), and the claw has open and
 closed values.
 
 calibration.json looks like:
 {
+  "angle_convention": "joint",
   "joints": {
     "base":    {"points": [[22, 0], [67, 45], [112, 90], [143, 120], [174, 150]], "min": 0, "max": 174},
     "arm":     {...}, "forearm": {...}, "wrist": {...}
@@ -30,10 +30,14 @@ calibration.json looks like:
 """
 
 import json
+import copy
+import math
 
 JOINTS = ("base", "arm", "forearm", "wrist")
 SERVO_INDEX = {"claw": 0, "wrist": 1, "forearm": 2, "arm": 3, "base": 4}   # read_mini.ino order
-IK_JOINTS = ("arm", "forearm", "wrist")                                   # q1, q2, q3 in miniarm_ik.py
+IK_JOINTS = ("arm", "forearm", "wrist")  # shoulder/elbow/wrist; base is handled separately
+ANGLE_CONVENTIONS = ('legacy', 'joint')
+REFERENCE_Q = {'base': 90., 'arm': 90., 'forearm': 0., 'wrist': 0.}
 
 MIN_POINTS = 2
 RECOMMENDED_POINTS = 5
@@ -47,6 +51,9 @@ class CalibrationError(Exception):
 class Calibration:
     def __init__(self, data):
         self.data = data
+        self.angle_convention = data.get('angle_convention', 'legacy')
+        if self.angle_convention not in ANGLE_CONVENTIONS:
+            raise CalibrationError('Unknown angle_convention; use joint or legacy')
         self.points = {}
         for name in JOINTS:
             pts = sorted((float(s), float(a)) for s, a in data["joints"][name]["points"])
@@ -77,12 +84,15 @@ class Calibration:
 
     # ------------------------------------------------------------------ servo <-> measured angle
     def servo_to_angle(self, name, servo):
-        """Servo value -> measured angle (deg), through the joint's points.
+        """Raw command -> angle stored in this file's declared convention (deg).
         Beyond the first or last point, the nearest segment is extended."""
         return _interpolate(self.points[name], servo)
 
     def angle_to_servo(self, name, angle):
-        """Measured angle (deg) -> servo value (float, not rounded)."""
+        """Stored-convention angle (deg) -> raw command (float, not rounded).
+
+        For a DH joint angle use q_to_servo(), which also handles legacy files.
+        """
         by_angle = sorted((a, s) for s, a in self.points[name])
         return _interpolate(by_angle, angle)
 
@@ -106,34 +116,48 @@ class Calibration:
 
     # ------------------------------------------------------------------ poses
     def middle_pose(self, claw=None):
-        """Every joint at 90 degrees (arm up, forearm and wrist in line, base ahead).
+        """Base forward, shoulder upright, elbow/wrist aligned.
         Servo values for S1..S5; the claw is open unless given."""
         pose = [0] * 5
         pose[SERVO_INDEX["claw"]] = self.claw_open if claw is None else claw
         for name in JOINTS:
             i = SERVO_INDEX[name]
             lo, hi = self.limits(i)
-            pose[i] = min(max(round(self.angle_to_servo(name, 90.0)), lo), hi)
+            pose[i] = min(max(self.q_to_servo(name, REFERENCE_Q[name]), lo), hi)
         return pose
 
     # ------------------------------------------------------------------ the IK's angles
-    # miniarm_ik.py uses q1 = arm from horizontal (90 = up, forward = smaller),
-    # q2, q3 = relative to the previous link (0 = in line, forward = negative).
-    # Measured angles use 90 = in line and forward = larger, so:
-    #     q1 = 180 - arm      q2 = 90 - forearm      q3 = 90 - wrist
+    # For OLD files only: shoulder q = 180 - measured angle;
+    # elbow/wrist q = 90 - measured angle. Base already uses 90 = forward.
+    # New joint-convention tables store all four DH q values directly.
     @staticmethod
     def measured_to_q(name, angle):
+        """Legacy measured-angle conversion only; new tables store q directly."""
+        if name == 'base': return angle
         return 180.0 - angle if name == "arm" else 90.0 - angle
 
     @staticmethod
     def q_to_measured(name, q):
+        """Inverse legacy conversion; base already uses the same convention."""
+        if name == 'base': return q
         return 180.0 - q if name == "arm" else 90.0 - q
 
     def q_to_servo(self, name, q):
-        return round(self.angle_to_servo(name, self.q_to_measured(name, q)))
+        stored = q if self.angle_convention == 'joint' else self.q_to_measured(name, q)
+        return round(self.angle_to_servo(name, stored))
 
     def servo_to_q(self, name, servo):
-        return self.measured_to_q(name, self.servo_to_angle(name, servo))
+        stored = self.servo_to_angle(name, servo)
+        return stored if self.angle_convention == 'joint' else self.measured_to_q(name, stored)
+
+    def as_joint_data(self):
+        """Copy as direct-DH-angle data; never mutate the original calibration."""
+        out = copy.deepcopy(self.data)
+        out['angle_convention'] = 'joint'
+        for name in JOINTS:
+            out['joints'][name]['points'] = [[s, self.servo_to_q(name, s)]
+                                            for s, _ in self.points[name]]
+        return out
 
     def base_angle_to_servo(self, angle):
         """Base angle (90 = straight ahead, larger = left) -> servo value."""
@@ -160,10 +184,17 @@ def _interpolate(pairs, x):
 def check(data):
     """Return (errors, warnings). Errors must be fixed before the file can be used."""
     errors, warnings = [], []
+    convention = data.get('angle_convention', 'legacy') if isinstance(data, dict) else 'legacy'
+    if convention not in ANGLE_CONVENTIONS:
+        errors.append('angle_convention must be joint or legacy')
+        return errors, warnings
     joints = data.get("joints", {}) if isinstance(data, dict) else {}
+    if not isinstance(joints, dict):
+        errors.append('joints must be an object')
+        joints = {}
     for name in JOINTS:
         j = joints.get(name)
-        if not j:
+        if not isinstance(j, dict) or not j:
             errors.append(f"{name}: missing")
             continue
         try:
@@ -171,6 +202,10 @@ def check(data):
             lo, hi = float(j["min"]), float(j["max"])
         except (TypeError, ValueError, KeyError):
             errors.append(f"{name}: points and min/max must be numbers")
+            continue
+
+        if not all(math.isfinite(v) for pair in pts for v in pair) or not all(math.isfinite(v) for v in (lo, hi)):
+            errors.append(f'{name}: points and safe limits must be finite numbers')
             continue
 
         if len(pts) < MIN_POINTS:
@@ -205,17 +240,21 @@ def check(data):
                 warnings.append(f"{name}: sharp bend at servo {s:g} / {a:g} deg; re-measure that point")
 
         angles = [a for _, a in pts]
-        if not min(angles) <= 90 <= max(angles):
-            warnings.append(f"{name}: no points on both sides of 90 deg; the middle pose is extrapolated")
+        reference = REFERENCE_Q[name] if convention == 'joint' else 90.
+        if not min(angles) <= reference <= max(angles):
+            warnings.append(f"{name}: reference angle {reference:g} deg is outside the measurements; its command is extrapolated")
         if lo < servos[0] or hi > servos[-1]:
             warnings.append(f"{name}: safe range goes beyond the measured points; angles out there are a guess (extended line)")
 
     claw = data.get("claw") if isinstance(data, dict) else None
-    if not claw:
+    if not isinstance(claw, dict) or not claw:
         errors.append("claw: missing")
     else:
         try:
             o, c, lo, hi = (float(claw[k]) for k in ("open", "closed", "min", "max"))
+            if not all(math.isfinite(v) for v in (o,c,lo,hi)):
+                errors.append('claw: settings must be finite numbers')
+                return errors, warnings
             if not (0 <= lo < hi <= 180):
                 errors.append("claw: safe range must satisfy 0 <= min < max <= 180")
             elif not (lo <= o <= hi and lo <= c <= hi):
@@ -225,3 +264,4 @@ def check(data):
         except (TypeError, ValueError, KeyError):
             errors.append("claw: open, closed, min and max must be numbers")
     return errors, warnings
+

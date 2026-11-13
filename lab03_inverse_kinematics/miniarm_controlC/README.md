@@ -25,7 +25,17 @@ for the reference drawing and interpretation.
 For hardware, upload `miniarm_controlC/miniarm_controlC.ino`, close Serial
 Monitor, then run `python miniarm_controlC.py --port COM11` with your actual port.
 Use `python miniarm_calibrate.py` to create your measured `calibration.json`.
-Read the startup-pose instructions before initializing real servos.
+Read [why and how to calibrate](../CALIBRATION_GUIDE.md), including the
+startup-pose instructions, before initializing real servos. Targets stay XYZ;
+calibration pairs an applied raw command with an independently measured DH
+joint angle. The form's **Why calibrate? / How to measure** button explains
+the references and gives a worked example. No polar workspace paper is required.
+
+New calibration files store DH angles directly (`angle_convention=joint`):
+elbow/wrist 0 degrees means aligned, with downward bending negative. Older
+files remain readable and are converted for display while preserving their
+command mapping. Update `miniarm_calibrate.py`, `miniarm_calibration.py` and
+`miniarm_ik.py` together; keep your own measured `calibration.json`.
 
 Keep this folder next to `../python`. The solver is shared with the existing
 Python reference, which matches the MATLAB implementation. The old planar
@@ -36,6 +46,7 @@ Angle/Distance/Height API is replaced by XYZ; do not mix files from old copies.
 ```console
 python -m unittest discover -s ../python -v
 python -m unittest discover -s . -p test_integration.py -v
+python -m unittest discover -s . -p test_calibration.py -v
 ```
 
 The latter opens a withdrawn Tk window and tests preview/execution using an
