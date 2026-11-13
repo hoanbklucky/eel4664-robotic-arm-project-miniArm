@@ -111,7 +111,8 @@ requirement. More points do not fix a wrong angle reference or wrong sign.
    Run `python miniarm_calibrate.py` in a separate terminal in the same folder.
    The calibrator itself does not open a serial port or move anything.
 4. Review the displayed S1–S5 startup commands with the instructor before
-   clicking Initialize. Connection leaves the servos disabled. INIT enables
+   clicking **Enable raw neutral (uncalibrated)** on an uncalibrated unit, or
+   **Straighten arm upright** once calibrated. Connection leaves the servos disabled. INIT enables
    them at those commands immediately; it is not a motion plan from a measured
    physical starting pose. Support the unloaded arm in a clear area and follow
    the instructor's startup procedure. Do not force a powered servo.
@@ -121,7 +122,14 @@ physical joint angles are not yet known**. Do not assume this means all links
 are at 90 degrees, or pretend that the uncalibrated XYZ readout measures them.
 The first enable should be an instructor-guided demonstration using the unit's
 known startup/neutral arrangement. Once calibrated, the displayed mathematical
-startup pose and its raw commands can be related through that measured mapping.
+upright pose q=[90,90,0,0] degrees and its raw commands are related through
+that measured mapping. The button never reads the manual sliders or uses the
+bent IK seed as its startup target. Upright means base forward, shoulder upright,
+elbow and wrist aligned; the first enable uses the calibrated claw-open command.
+If calibrated limits cannot represent upright, initialization reports an error
+rather than clipping to a different pose. Once initialized, clicking the button
+uses a checked gradual move from the current commanded pose, preserving the claw.
+A blocked path is rejected; no automatic detour is planned.
 
 ## 6. Collect one real measurement pair
 
@@ -163,8 +171,10 @@ geometry.
 2. Save calibration.json, then click Reload calibration in the controller.
    Reload updates the mapping/limits and disables movement until explicitly
    initialized again; it does not move the arm.
-3. Establish the displayed startup configuration using the calibrated mapping
-   and the instructor's procedure, then initialize.
+3. Establish the displayed upright configuration q=[90,90,0,0] degrees using
+   the calibrated mapping and instructor's procedure, then click
+   **Straighten arm upright**. This first enable attaches immediately, not a
+   gradual move from an unknown physical pose.
 4. Test an additional clear pose not used as a fitted point. Compare the measured
    joint angle with the estimate and then validate FK at the three XYZ poses in
    Section 7 of STUDENT_GUIDE.md. Record the same XYZ axes/origin and units.

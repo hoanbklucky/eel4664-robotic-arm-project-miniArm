@@ -265,7 +265,7 @@ class ArmApp:
             except Exception as e: self.log(f'Connection failed: {e}. Use --simulate for offline work.')
         self.status.set('SIMULATION: no physical movement' if simulate else f'Hardware port: {port}')
         if self.synthetic: self.log('SIMULATION uses a synthetic calibration, not measurements.')
-        self.log('Connect leaves servos off. Place the arm at the displayed startup pose, then Initialize.')
+        self.log('Connection leaves servos off. With calibration, arrange the unloaded arm upright before first enable; the upright command ignores sliders.')
         self.root.after(20,self.poll)
         root.protocol('WM_DELETE_WINDOW',self.close)
 
@@ -278,7 +278,8 @@ class ArmApp:
         self.status=tk.StringVar(); tk.Label(self.root,textvariable=self.status).pack()
         setup=tk.Frame(self.root); setup.pack(fill='x',padx=12)
         self.init_text=tk.StringVar(); tk.Label(setup,textvariable=self.init_text).pack(side='left')
-        tk.Button(setup,text='Initialize at startup pose',command=self.initialize).pack(side='right')
+        self.init_button=tk.Button(setup,command=self.initialize)
+        self.init_button.pack(side='right')
         self.update_init_text()
         panel=tk.Frame(self.root); panel.pack(padx=10)
         self.sliders={}
@@ -324,13 +325,28 @@ class ArmApp:
         return self.cal.limits(j) if self.cal else (0,180)
 
     def update_init_text(self):
-        pose=self.start_pose()
-        self.init_text.set('Startup S1..S5 raw commands: '+' '.join(map(str,pose)))
+        self.init_button.config(text='Straighten arm upright' if self.cal else 'Enable raw neutral (uncalibrated)')
+        try:
+            pose=self.start_pose()
+            reference='Upright q=[90,90,0,0] deg' if self.cal else 'UNCALIBRATED: angles unknown'
+            self.init_text.set(reference+'; S1..S5: '+' '.join(map(str,pose)))
+        except ValueError as e:
+            self.init_text.set('Upright unavailable: '+str(e))
 
     def start_pose(self):
+        """Fixed upright reference, independent of model seed and manual sliders.
+
+        Without calibration only raw neutral is known, not a physical posture.
+        Never clip an unavailable upright pose into a different configuration.
+        """
         if self.cal:
-            try: return ik.q_to_servo(self.cal,self.m.q0,self.cal.claw_open)
-            except ValueError: return self.cal.middle_pose()
+            q=np.deg2rad([90.,90.,0.,0.])
+            if np.any(q < self.m.limits[:,0]) or np.any(q > self.m.limits[:,1]):
+                raise ValueError('upright angles are outside calibrated limits')
+            pose=ik.q_to_servo(self.cal,q,self.cal.claw_open)
+            if ik.clearance(self.m,ik.servo_to_q(self.cal,pose))[0] <= 0:
+                raise ValueError('upright pose violates configured clearance')
+            return pose
         return [90]*5
 
     def send(self,line):
@@ -355,12 +371,22 @@ class ArmApp:
     def initialize(self):
         if not self.ready or self.busy: return
         try:
+            pose=self.start_pose()  # fixed reference; never read manual sliders
+            if self.initialized:
+                pose[CLAW]=self.positions[CLAW]  # do not release a held object
+                if self.cal:
+                    ik.validate_servo_leg(self.m,self.cal,self.positions,pose)
+                self.invalidate()
+                self.mode='A'; self.send('MODE A')
+                self.launch([pose])  # checked, gradual J move, not another INIT
+                return
             self.invalidate()
             limits=' '.join(f'{lo} {hi}' for lo,hi in (self.limit(j) for j in range(5)))
             self.send(f'CFG {limits} {STEP_MS} {SETTLE_MS}')
             self.mode='A'; self.send('MODE A')
-            self.launch([self.start_pose()],command='INIT')
-        except Exception as e: self.log(str(e))
+            self.log('First enable: INIT attaches immediately. Physical pose must already be near the displayed reference; no encoder feedback.')
+            self.launch([pose],command='INIT')
+        except Exception as e: self.log('Cannot straighten/enable arm: '+str(e))
 
     def launch(self,poses,command='J'):
         self.plan=[list(p) for p in poses]; self.active=command
@@ -484,7 +510,7 @@ class ArmApp:
             self.invalidate(); self.initialized=False; self.update_init_text()
             for j,s in self.sliders.items():
                 lo,hi=self.limit(j); s.config(from_=hi,to=lo)
-            self.log('Calibration loaded. Initialize again at the displayed pose.')
+            self.log('Calibration loaded; servos require explicit initialization. Arrange the arm upright before first enable, then Straighten arm upright.')
         except Exception as e: self.log(str(e))
 
     def redraw_preview(self):
@@ -496,7 +522,12 @@ class ArmApp:
         c=self.canvas; c.delete('all')
         candidate=q is not None
         self._preview_plot=(q,target,result) if candidate else None
-        current_q=ik.servo_to_q(self.cal,self.positions) if self.cal and self.initialized else self.m.q0
+        current_q=self.m.q0
+        if self.cal:
+            try:
+                current_q=ik.servo_to_q(self.cal,self.positions if self.initialized else self.start_pose())
+            except ValueError:
+                pass  # No valid upright reference; initialization reports why.
         current=ik.fk(self.m,current_q)[1]*1000
         P=ik.fk(self.m,q)[1]*1000 if candidate else current
         width=c.winfo_width(); height=c.winfo_height()

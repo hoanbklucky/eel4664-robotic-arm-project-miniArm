@@ -1,5 +1,21 @@
 # Python GUI integration validation
 
+## Fixed upright initialization
+
+The calibrated startup target is q=[90,90,0,0] degrees, independent of sliders
+and the model's IK seed. The button is Straighten arm upright. An unavailable
+upright reference is rejected rather than clipped. First enable sends INIT;
+subsequent initialized clicks validate the sequential path, send a gradual J
+move, and preserve the current claw command. Without calibration, the separate
+label Enable raw neutral (uncalibrated) identifies the raw-90 bootstrap action.
+
+Four headless startup tests passed, covering fixed reference selection,
+calibrated-limit rejection with no commands sent, subsequent checked motion,
+blocked-path rejection, claw preservation and uncalibrated labeling. The 18
+noninteractive integration/calibration/preview tests also passed; the live Tk
+preview test was skipped without a display. Python source compiles. Physical
+initialization and native Tk interaction were not tested for this revision.
+
 ## Calibration explanation and direct joint-angle entry
 
 The calibration form now accepts DH joint q in degrees directly, including

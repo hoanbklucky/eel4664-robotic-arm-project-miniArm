@@ -10,7 +10,7 @@ python -m pip install -r requirements.txt
 python miniarm_controlC.py --simulate
 ```
 
-Click **Initialize at startup pose**, select **IK CONTROL**, enter XYZ mm,
+Click **Straighten arm upright**, select **IK CONTROL**, enter XYZ mm,
 click **Calculate / Preview**, then **Move Arm**. Offline mode opens no serial
 port. Its fallback synthetic calibration is not a measured hardware calibration.
 
@@ -25,6 +25,16 @@ for the reference drawing and interpretation.
 For hardware, upload `miniarm_controlC/miniarm_controlC.ino`, close Serial
 Monitor, then run `python miniarm_controlC.py --port COM11` with your actual port.
 Use `python miniarm_calibrate.py` to create your measured `calibration.json`.
+With calibration, **Straighten arm upright** uses q=[90,90,0,0] degrees
+(base forward, shoulder vertical, elbow/wrist aligned), independently of the
+sliders or IK seed. First enable uses immediate INIT, so arrange the unloaded
+arm near upright using the instructor's procedure before clicking. After
+initialization the button performs a checked gradual move and preserves the
+claw command. If upright is outside calibrated limits or its path is blocked,
+it reports the reason instead of substituting a different pose. Before any
+calibration the button is **Enable raw neutral (uncalibrated)**: raw 90 on
+all channels has unknown physical angles and is for supervised calibration.
+
 Read [why and how to calibrate](../CALIBRATION_GUIDE.md), including the
 startup-pose instructions, before initializing real servos. Targets stay XYZ;
 calibration pairs an applied raw command with an independently measured DH

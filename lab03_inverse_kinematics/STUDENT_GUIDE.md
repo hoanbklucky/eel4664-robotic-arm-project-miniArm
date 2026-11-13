@@ -158,7 +158,9 @@ Tk package if needed.
 No Arduino connection is opened in this mode. Without `calibration.json`, the
 GUI uses a labeled **synthetic calibration** for offline testing only.
 
-1. Click **Initialize at startup pose** to initialize the emulator.
+1. Click **Straighten arm upright** to initialize the emulator at
+   q=[90,90,0,0] degrees: base forward, upper arm vertical, elbow and wrist
+   aligned. This fixed pose ignores the sliders and the IK initial guess.
 2. Select **IK CONTROL**.
 3. Enter X, Y and Z in **millimetres**, for example `-40`, `100`, `150`.
 4. Click **Calculate / Preview**. Inspect the arm, target, calculated angles,
@@ -254,8 +256,8 @@ It explains startup, measurement tools, safe ranges and independent validation.
    `python miniarm_calibrate.py` alongside it. Click **Why calibrate? / How to
    measure** in the calibration window. That form does not move the arm.
 3. Review the displayed S1–S5 startup commands with the instructor and establish
-   the first pose before clicking Initialize. Without calibration, raw commands
-   are all 90 but their physical angles are unknown. INIT attaches servos
+   the upright pose before clicking **Straighten arm upright**. Without calibration, raw commands
+   are all 90 and the button reads **Enable raw neutral (uncalibrated)**; their physical angles are unknown. INIT attaches servos
    immediately; it does not plan from a measured initial pose. Do not assume
    that an uncalibrated estimate identifies the physical starting configuration.
 4. Select APP CONTROL. Change one slider, click **Send manual sliders**, wait
@@ -267,6 +269,11 @@ It explains startup, measurement tools, safe ranges and independent validation.
    mechanically safe; the new form leaves unknown limits blank.
 6. Click Check, resolve errors, Save, and Reload calibration in the controller.
    Reloading does not move the arm and requires explicit initialization again.
+   With calibration, the fixed upright reference is q=[90,90,0,0] degrees.
+   First enable attaches immediately, so arrange the unloaded arm near upright
+   using the instructor's procedure. Later clicks request a checked gradual
+   move to upright and preserve the claw command. Unavailable upright angles or
+   a blocked path produce an error rather than a substituted posture.
    Validate an extra pose independently before collecting the XYZ results below.
 
 New files declare `angle_convention=joint`. Older calibration files are still
@@ -343,7 +350,7 @@ which values you used. Label hardware experiments that were not performed.
 | `No module named serial` or `numpy` | Install requirements with the Python used to launch the GUI |
 | Cannot find `kinematics` | Restore sibling `../python` folder; download the complete repository |
 | Port access denied | Close Serial Monitor and other GUI instances; check the port |
-| Window does not initialize automatically | Expected; arrange startup pose and click Initialize |
+| Window does not initialize automatically | Expected; follow first-enable instructions and click Straighten arm upright |
 | Move Arm disabled | Select IK mode, initialize, load calibration, then Calculate / Preview |
 | Starting pose collides | Inspect the physical pose/model; establish a clear starting pose manually |
 | IK converges but execution path rejected | Sequential rounded servo motion differs from continuous solver motion; try a closer target or a clear starting posture |
