@@ -52,7 +52,7 @@ except ImportError:            # hardware is unavailable; explicit --simulate st
 
 # Servo indexes, in read_mini.ino order
 CLAW, WRIST, FOREARM, ARM, BASE = 0, 1, 2, 3, 4
-JOINT_NAMES = ["Claw", "Wrist", "Forearm", "Arm", "Base"]
+JOINT_NAMES = ["Claw", "Wrist", "Elbow", "Shoulder", "Base"]
 DISPLAY_ORDER = [BASE, ARM, FOREARM, WRIST, CLAW]   # left to right on screen: bottom of the arm first
 
 MODES = {   # code sent to the Arduino: (button text, color)
@@ -402,7 +402,7 @@ class ArmApp:
             pose=self.start_pose()  # fixed reference; never read manual sliders
             if self.cal:
                 self.log('Upright calibration conversion: '+', '.join(
-                    f'{name} q={q:g} deg -> S{mc.SERVO_INDEX[name]+1} raw {pose[mc.SERVO_INDEX[name]]}'
+                    f'{JOINT_NAMES[mc.SERVO_INDEX[name]]} q={q:g} deg -> S{mc.SERVO_INDEX[name]+1} raw {pose[mc.SERVO_INDEX[name]]}'
                     for name,q in zip(mc.JOINTS,[90,90,0,0])))
             if self.initialized:
                 pose[CLAW]=self.positions[CLAW]  # do not release a held object

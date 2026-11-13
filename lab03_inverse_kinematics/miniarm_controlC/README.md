@@ -98,3 +98,8 @@ until measured, and do not fully represent camera, fingers, payload or obstacles
 Full reference code is provided for students to inspect, verify and explain.
 The old solution-removal generator is not used with this shared implementation.
 
+
+The control sliders are labeled **Base, Shoulder, Elbow, Wrist, Claw** to name
+the joints consistently with the DH-angle readout and calibration form. Existing
+JSON keys `arm` (shoulder) and `forearm` (elbow) are retained for compatibility;
+existing calibration files need no renaming.

@@ -51,8 +51,8 @@ There is no extra 90-degree-reference conversion for students to perform.
 | Controller slider / channel | What to measure | Zero/reference and sign |
 |---|---|---|
 | Base / S5 | Heading of the rotating base, viewed from above | 0 right, 90 forward, 180 left |
-| Arm = shoulder / S4 | Upper-arm centerline relative to horizontal forward, viewed from the side | 0 forward-horizontal; positive rotates up; 90 upright |
-| Forearm = elbow / S3 | Forearm direction relative to the upper arm's forward extension | 0 aligned; down-forward bend negative; up-back bend positive |
+| Shoulder / S4 | Upper-arm centerline relative to horizontal forward, viewed from the side | 0 forward-horizontal; positive rotates up; 90 upright |
+| Elbow / S3 | Forearm direction relative to the upper arm's forward extension | 0 aligned; down-forward bend negative; up-back bend positive |
 | Wrist / S2 | Wrist-to-TCP direction relative to the forearm's forward extension | 0 aligned; down-forward bend negative; up-back bend positive |
 | Claw / S1 | Raw commands that open and close the fingers | No DH positioning angle is required for claw opening |
 

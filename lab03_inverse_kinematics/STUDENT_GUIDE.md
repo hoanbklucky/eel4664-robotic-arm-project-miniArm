@@ -240,8 +240,8 @@ angle q)** pair. The updated form uses the same q convention as MATLAB directly:
 | Joint / GUI slider | Channel | What the measured q means |
 |---|---|---|
 | Base | S5 | 0° right, 90° forward, 180° left; measured from above |
-| Shoulder / Arm | S4 | 0° horizontal forward, 90° upright; measured from the side |
-| Elbow / Forearm | S3 | 0° aligned with the upper arm's forward extension; down-forward bend is negative |
+| Shoulder | S4 | 0° horizontal forward, 90° upright; measured from the side |
+| Elbow | S3 | 0° aligned with the upper arm's forward extension; down-forward bend is negative |
 | Wrist | S2 | 0° aligned with the forearm's forward extension; down-forward bend is negative |
 | Claw opening | S1 | Record raw open/closed commands, not a positioning joint angle |
 
