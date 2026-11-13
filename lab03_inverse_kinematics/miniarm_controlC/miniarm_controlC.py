@@ -292,8 +292,9 @@ class ArmApp:
             self.log('SIMULATION uses synthetic calibration; local calibration.json is ignored. Use --simulate --use-calibration to test your measured mapping.')
         elif self.cal:
             self.log(f'Saved calibration loaded: {self.cal.angle_convention} angle convention. Check angle references if IK limits seem wrong.')
-        self.log('Connection leaves servos off. With calibration, arrange the unloaded arm upright before first enable; the upright command ignores sliders.')
-        self.root.after(20,self.poll)
+        if not simulate:
+            self.log('Connection leaves servos off. With calibration, arrange the unloaded arm upright before first enable; the upright command ignores sliders.')
+        self.poll()  # process the emulator READY now; subsequent polls schedule themselves
         root.protocol('WM_DELETE_WINDOW',self.close)
 
     def _build(self):
@@ -415,7 +416,10 @@ class ArmApp:
             limits=' '.join(f'{lo} {hi}' for lo,hi in (self.limit(j) for j in range(5)))
             self.send(f'CFG {limits} {STEP_MS} {SETTLE_MS}')
             self.mode='A'; self.send('MODE A')
-            self.log('First enable: INIT attaches immediately. Physical pose must already be near the displayed reference; no encoder feedback.')
+            if getattr(getattr(self,'link',None),'simulated',False):
+                self.log('Initializing emulator at upright reference; no physical movement.')
+            else:
+                self.log('First enable: INIT attaches immediately. Physical pose must already be near the displayed reference; no encoder feedback.')
             self.launch([pose],command='INIT')
         except Exception as e: self.log('Cannot straighten/enable arm: '+str(e))
 
@@ -438,14 +442,22 @@ class ArmApp:
             if line.endswith('READY'):
                 self.ready=True; self.initialized=False; self.busy=False
                 self.plan=[]; self.pending=None; self.invalidate()
-                self.log('Arduino READY. Servos off; initialize explicitly.')
+                if getattr(self.link,'simulated',False):
+                    self.log('Emulator READY. Preparing upright reference for direct IK preview.')
+                    self.initialize()
+                else:
+                    self.log('Arduino READY. Servos off; initialize explicitly.')
             elif parts[0]=='P' and len(parts)==6:
                 self.positions=[int(v) for v in parts[1:]]; self.update_position()
             elif line=='OK' and self.pending is not None:
                 self.positions=list(self.pending); self.commanded=list(self.pending)
                 if self.active=='INIT': self.initialized=True
                 self.pending=None; self.update_position()
-                try: self.next_waypoint()
+                try:
+                    self.next_waypoint()
+                    if self.active=='INIT' and not self.busy and getattr(self.link,'simulated',False):
+                        self.set_mode('I')
+                        self.log('Simulation ready for XYZ Calculate / Preview; no upright click required.')
                 except Exception as e: self.fail(str(e))
             elif parts[0]=='K' and len(parts)==6:
                 self.knobs=[int(v) for v in parts[1:]]
@@ -544,7 +556,11 @@ class ArmApp:
             self.invalidate(); self.initialized=False; self.update_init_text()
             for j,s in self.sliders.items():
                 lo,hi=self.limit(j); s.config(from_=hi,to=lo)
-            self.log('Calibration loaded; servos require explicit initialization. Arrange the arm upright before first enable, then Straighten arm upright.')
+            if getattr(self.link,'simulated',False):
+                self.log('Calibration loaded. Reinitializing emulator upright for IK preview.')
+                self.initialize()
+            else:
+                self.log('Calibration loaded; servos require explicit initialization. Arrange the arm upright before first enable, then Straighten arm upright.')
         except Exception as e: self.log(str(e))
 
     def redraw_preview(self):

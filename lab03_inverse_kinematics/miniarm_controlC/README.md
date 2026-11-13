@@ -10,8 +10,10 @@ python -m pip install -r requirements.txt
 python miniarm_controlC.py --simulate
 ```
 
-Click **Straighten arm upright**, select **IK CONTROL**, enter XYZ mm,
-click **Calculate / Preview**, then **Move Arm**. Offline mode opens no serial
+Simulation opens automatically at the upright reference in **IK CONTROL**.
+Enter XYZ mm, click **Calculate / Preview**, then **Move Arm**. No startup
+button click is required; **Straighten arm upright** is an optional later
+return-to-reference action. Offline mode opens no serial
 port. By default it uses synthetic calibration and ignores local calibration.json;
 that synthetic mapping is not a measured hardware calibration. Your file is not
 changed. To test the saved hardware calibration and limits in the emulator:
@@ -37,7 +39,8 @@ for the reference drawing and interpretation.
 For hardware, upload `miniarm_controlC/miniarm_controlC.ino`, close Serial
 Monitor, then run `python miniarm_controlC.py --port COM11` with your actual port.
 Use `python miniarm_calibrate.py` to create your measured `calibration.json`.
-With calibration, **Straighten arm upright** uses q=[90,90,0,0] degrees
+Hardware still requires explicit first initialization. With calibration,
+**Straighten arm upright** uses q=[90,90,0,0] degrees
 (base forward, shoulder vertical, elbow/wrist aligned), independently of the
 sliders or IK seed. First enable uses immediate INIT, so arrange the unloaded
 arm near upright using the instructor's procedure before clicking. After

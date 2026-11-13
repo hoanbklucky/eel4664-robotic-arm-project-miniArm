@@ -168,10 +168,11 @@ To deliberately test a measured hardware mapping and its limits offline, run
 which calibration is active. An invalid/missing file in that explicit mode is
 reported as an error; it is not replaced by a synthetic mapping.
 
-1. Click **Straighten arm upright** to initialize the emulator at
-   q=[90,90,0,0] degrees: base forward, upper arm vertical, elbow and wrist
-   aligned. This fixed pose ignores the sliders and the IK initial guess.
-2. Select **IK CONTROL**.
+1. The emulator initializes automatically at q=[90,90,0,0] degrees: base
+   forward, upper arm vertical, elbow/wrist aligned. No startup button click is
+   required. This reference ignores sliders and the IK initial guess.
+2. **IK CONTROL** is selected automatically. **Straighten arm upright** remains
+   available later as an optional checked return to upright.
 3. Enter X, Y and Z in **millimetres**, for example `-40`, `100`, `150`.
 4. Click **Calculate / Preview**. Inspect the arm, target, calculated angles,
    position error and error curve. This does not send a movement.
@@ -364,8 +365,8 @@ which values you used. Label hardware experiments that were not performed.
 | `No module named serial` or `numpy` | Install requirements with the Python used to launch the GUI |
 | Cannot find `kinematics` | Restore sibling `../python` folder; download the complete repository |
 | Port access denied | Close Serial Monitor and other GUI instances; check the port |
-| Window does not initialize automatically | Expected; follow first-enable instructions and click Straighten arm upright |
-| Move Arm disabled | Select IK mode, initialize, load calibration, then Calculate / Preview |
+| Hardware does not initialize automatically | Expected; follow first-enable instructions and click Straighten arm upright. Simulation initializes automatically. |
+| Move Arm disabled | Calculate a successful checked preview first. Hardware also requires calibration and explicit initialization; simulation starts ready in IK mode. |
 | Starting pose collides | Inspect the physical pose/model; establish a clear starting pose manually |
 | IK converges but execution path rejected | Sequential rounded servo motion differs from continuous solver motion; try a closer target or a clear starting posture |
 | Solver residual tiny, measured error large | Check calibration, dimensions, reference origin, backlash and load |

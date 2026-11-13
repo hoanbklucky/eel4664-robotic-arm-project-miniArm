@@ -140,8 +140,10 @@ Only a successful, checked plan enables Move Arm. Move rechecks target/start
 state and the plan, then sends one waypoint at a time, waiting for OK. The
 firmware does not recalculate IK or apply DH offsets. Its P reports are command
 estimates, not measured physical angles. Reloading calibration invalidates the
-old preview and requires explicit initialization. Upright first enable uses
-q=[90,90,0,0] and immediate INIT; later upright requests use checked gradual J.
+old preview. Hardware requires explicit initialization; the emulator prepares
+its reference automatically and selects IK mode, including after a valid saved
+calibration reload. Upright first enable uses q=[90,90,0,0] and immediate INIT;
+later upright requests use checked gradual J. No physical link is auto-enabled.
 
 ## 6. Findings and corrections from this audit
 

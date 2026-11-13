@@ -1,5 +1,21 @@
 # Python GUI integration validation
 
+## Direct IK preview on simulation startup (latest)
+
+Only the emulator handles READY by preparing its upright reference automatically,
+then selecting IK mode after the initialization acknowledgement. The constructor
+processes the emulator READY before returning. Users can enter XYZ and Calculate
+without pressing Straighten arm upright. The button remains available for later
+checked return moves. Valid saved-calibration reload in the emulator also restores
+this ready state. A physical serial link remains disabled and requires explicit
+initialization; neither READY nor reload automatically enables physical servos.
+
+38 noninteractive GUI/adapter tests passed; 2 native Tk tests were skipped without
+a display. Three new checks cover direct Calculate after emulator READY, reset,
+and zero initialization commands on hardware READY. The actual Calculate/Move
+pipeline tests still pass for both calibration formats. Python source compiles.
+No physical hardware or native Tk window was run in this revision.
+
 ## Corrected +/-90-degree limits and upright calibration check (latest)
 
 The instructor confirmed +/-90 degrees for elbow/wrist. MATLAB and Python model

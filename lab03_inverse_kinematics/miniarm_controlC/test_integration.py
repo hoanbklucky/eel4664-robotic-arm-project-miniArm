@@ -74,10 +74,8 @@ class GuiTests(unittest.TestCase):
         root=tk.Tk(); root.withdraw()
         app=gui.ArmApp(root,simulate=True)
         try:
-            app.poll(); self.assertFalse(app.initialized)
-            self.assertFalse(app.link.on)
-            app.initialize(); app.poll(); self.assertTrue(app.initialized)
-            app.set_mode('I'); app.poll()
+            app.poll(); self.assertTrue(app.initialized)
+            self.assertTrue(app.link.on); self.assertEqual(app.mode,'I')
             target=ik.position(app.m,np.deg2rad([110,70,-80,-40]))*1000
             for e,v in zip(app.entries,target): e.delete(0,'end'); e.insert(0,str(v))
             before=list(app.positions); app.calculate()
