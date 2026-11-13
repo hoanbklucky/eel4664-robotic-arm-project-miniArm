@@ -1,5 +1,6 @@
 """Offline numerical, motion-protocol and GUI regression tests. No serial port."""
 import unittest
+import os
 import numpy as np
 import miniarm_ik as ik
 import miniarm_calibration as mc
@@ -66,6 +67,7 @@ class IntegrationTests(unittest.TestCase):
         bad=ik.q_to_servo(self.cal,np.deg2rad([90,0,0,-90]),40)
         with self.assertRaises(ValueError): ik.validate_servo_leg(self.m,self.cal,self.start,bad)
 
+@unittest.skipUnless(os.environ.get('DISPLAY') or os.name=='nt', 'Interactive Tk test requires a display')
 class GuiTests(unittest.TestCase):
     def test_preview_does_not_move_then_execution_and_stop(self):
         import tkinter as tk

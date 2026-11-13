@@ -40,6 +40,7 @@ class Model:
 
 
 def example_model():
+    """Generic teaching example, NOT miniArm; use miniarm_source_model instead."""
     tool = np.eye(4); tool[0, 3] = .06
     return Model(np.array([[0, 0, .06, 0], [0, -np.pi/2, 0, 0],
                            [.1, 0, 0, 0], [.1, 0, 0, 0]]),
@@ -48,6 +49,11 @@ def example_model():
 
 
 def mdh(row, q):
+    """Craig Rx(alpha) Tx(a) Rz(offset+q) Tz(d), and partial A/partial q.
+
+    Distances are metres, q/alpha/offset radians. D is a derivative, not a pose.
+    This is the same formula as MATLAB MiniArmIK.mdh.
+    """
     a, alpha, d, offset = row
     c, s = np.cos(q+offset), np.sin(q+offset)
     ca, sa = np.cos(alpha), np.sin(alpha)
@@ -72,6 +78,7 @@ def position(m, q):
 
 
 def jacobian(m, q, method='partial', h=1e-5):
+    """3xn TCP position Jacobian in m/rad, expressed in world frame {0}."""
     q = m.check_q(q); n = len(q); J = np.zeros((3, n))
     if method == 'finite':
         if not np.isfinite(h) or h <= 0:
@@ -81,6 +88,8 @@ def jacobian(m, q, method='partial', h=1e-5):
             J[:, j] = (position(m, q+dq)-position(m, q-dq))/(2*h)
     elif method == 'partial':
         for j in range(n):
+            # Only A_j depends on q_j: replace that factor by D_j.
+            # The fixed base/tool transforms stay in the product.
             dT = m.base.copy()
             for i, (row, qi) in enumerate(zip(m.mdh, q)):
                 A, D = mdh(row, qi); dT = dT @ (D if i == j else A)
@@ -113,11 +122,13 @@ def solve(m, target, q0=None, method='partial'):
         dq *= min(1., .10/max(np.linalg.norm(dq), np.finfo(float).eps))
         accepted = False
         for ls in range(16):
+            # Candidate = current q + scaled DLS update; clip to joint limits.
             trial = np.clip(q + .5**ls*dq, m.limits[:, 0], m.limits[:, 1])
             err = float(np.linalg.norm(target-position(m, trial)))
             if err < np.linalg.norm(e)-1e-12:
                 if edge_clear(m,q,trial):
-                    q = trial; accepted = True; break
+                    q = trial  # commit next iterate only after both checks
+                    accepted = True; break
                 blocked=True
         if not accepted:
             status = 'stalled_or_collision' if blocked else 'stalled'; break

@@ -63,12 +63,18 @@ Keep this folder next to `../python`. The solver is shared with the existing
 Python reference, which matches the MATLAB implementation. The old planar
 Angle/Distance/Height API is replaced by XYZ; do not mix files from old copies.
 
+The default simulation now uses the same joint limits as MATLAB: base/shoulder
+0..180 degrees, elbow/wrist -160..160 degrees. Its synthetic servo mappings
+are invented to cover those limits; they are not hardware calibration values.
+See the [pipeline audit](../PYTHON_MATLAB_AUDIT.md) for DH/frame definitions,
+calibration equations, command ordering and verification results.
+
 ## Tests
 
 ```console
 python -m unittest discover -s ../python -v
 python -m unittest discover -s . -p test_integration.py -v
-python -m unittest discover -s . -p test_calibration.py -v
+python -m unittest discover -s . -p "test_*.py" -v
 ```
 
 The latter opens a withdrawn Tk window and tests preview/execution using an

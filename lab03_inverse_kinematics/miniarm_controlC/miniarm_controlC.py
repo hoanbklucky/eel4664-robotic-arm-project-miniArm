@@ -188,6 +188,7 @@ class SimulatedArm:
         self.seq = None            # [targets, index, settle_until]
         self.last_step = self.last_report = 0.0
         self.changed = False
+        self.step_ms,self.settle_ms=STEP_MS,SETTLE_MS
         inbox.put("READY")
 
     def send(self, line):
@@ -195,18 +196,25 @@ class SimulatedArm:
         cmd, nums = parts[0], [int(p) for p in parts[1:] if p.lstrip("-").isdigit()]
         clamp = lambda i, v: max(self.limits[i][0], min(self.limits[i][1], v))
         if cmd == "CFG" and len(nums) == 12:
-            self.limits = [(nums[2 * i], nums[2 * i + 1]) for i in range(5)]
+            self.limits = [(max(0,min(180,min(nums[2*i:2*i+2]))),
+                            max(0,min(180,max(nums[2*i:2*i+2])))) for i in range(5)]
+            self.step_ms,self.settle_ms=max(1,nums[10]),max(0,nums[11])
             self.inbox.put("CFG OK")
         elif cmd == "INIT" and len(nums) == 5:
+            self.seq,self.move_active=None,False  # INIT freezes old motion, as firmware does
             self.cur = [clamp(i, v) for i, v in enumerate(nums)]
             self.tgt = list(self.cur)
             self.on = self.changed = True
             self.inbox.put("OK")
         elif cmd == "MODE":
+            if len(parts)!=2 or parts[1] not in ('A','K','I'):
+                self.inbox.put('ERR MODE is A, K or I'); return
             self.tgt, self.move_active, self.seq = list(self.cur), False, None
             self.mode = parts[1]
             self.inbox.put(f"MODE {self.mode}")
         elif cmd in ("M", "J") and len(nums) == 5:
+            if not self.on:
+                self.inbox.put('ERR send INIT first'); return
             if self.mode == "K":
                 self.inbox.put("ERR in knob mode")
                 return
@@ -229,8 +237,8 @@ class SimulatedArm:
 
     def tick(self):
         now = time.monotonic()
-        while self.on and now - self.last_step >= STEP_MS / 1000:
-            self.last_step = now if now - self.last_step > 1 else self.last_step + STEP_MS / 1000
+        while self.on and now - self.last_step >= self.step_ms / 1000:
+            self.last_step = now if now - self.last_step > 1 else self.last_step + self.step_ms / 1000
             if self.seq:
                 targets, idx, settle_until = self.seq
                 if now < settle_until:
@@ -244,7 +252,7 @@ class SimulatedArm:
                 j = self.ORDER[idx]
                 self.tgt[j] = targets[j]
                 arrived = self._step(j, targets[j])
-                self.seq = [targets, idx, now + SETTLE_MS / 1000 if arrived else 0.0]
+                self.seq = [targets, idx, now + self.settle_ms / 1000 if arrived else 0.0]
             else:
                 there = all([self._step(i, self.tgt[i]) for i in range(5)])
                 if self.move_active and there:

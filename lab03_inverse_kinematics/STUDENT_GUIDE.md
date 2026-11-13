@@ -1,5 +1,7 @@
 # Lab 03 — From DH parameters to inverse kinematics and robot motion
 
+For the exact frame/DH conventions, conversion equations and file responsibilities, see the [MATLAB/Python pipeline audit](PYTHON_MATLAB_AUDIT.md).
+
 **Develop the DH table from the assigned frames, understand how the provided
 code turns that table into robot motion, and run it in MATLAB and the Python GUI.**
 You are not required to write the FK, Jacobian or numerical IK algorithms.

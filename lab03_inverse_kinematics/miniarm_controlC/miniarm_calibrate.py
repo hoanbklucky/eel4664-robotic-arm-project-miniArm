@@ -250,7 +250,7 @@ class CalibrateApp:
     # ------------------------------------------------------------------ actions
     def check(self):
         data, problems = self.read_form()
-        errors, warnings = ([], []) if problems else mc.check(self._as_ints(data))
+        errors, warnings = ([], []) if problems else mc.check(data)
         errors = problems + errors
         self.say("Check:", clear=True)
         for e in errors:

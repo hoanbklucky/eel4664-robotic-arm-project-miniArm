@@ -11,7 +11,7 @@ from collision import clearance, edge_clear
 from miniarm_source_model import source_model
 import miniarm_calibration as mc
 
-JOINTS = ('base', 'arm', 'forearm', 'wrist')
+JOINTS = mc.JOINTS  # mathematical q order, NOT S1..S5 transmission order
 
 def model(geometry, calibration=None):
     """Match miniarm_model.m; replace dimensions and limits with measurements."""
@@ -24,8 +24,7 @@ def model(geometry, calibration=None):
         bounds = []
         for name in JOINTS:
             lo, hi = calibration.limits(mc.SERVO_INDEX[name])
-            values = [calibration.servo_to_angle(name,s) if name=='base'
-                      else calibration.servo_to_q(name,s) for s in (lo,hi)]
+            values = [calibration.servo_to_q(name,s) for s in (lo,hi)]
             bounds.append(sorted(values))
         m.limits = np.deg2rad(bounds)
         m.q0 = np.clip(m.q0,m.limits[:,0],m.limits[:,1])
@@ -34,13 +33,13 @@ def model(geometry, calibration=None):
 
 def servo_to_q(cal, pose):
     """S1..S5 -> [base,shoulder,elbow,wrist], radians."""
-    return np.deg2rad([cal.servo_to_angle('base',pose[4]),
-        *[cal.servo_to_q(n,pose[mc.SERVO_INDEX[n]]) for n in JOINTS[1:]]])
+    return np.deg2rad([cal.servo_to_q(name,pose[mc.SERVO_INDEX[name]])
+                      for name in JOINTS])
 
 def q_to_servo(cal,q,claw):
     deg=np.rad2deg(q)
-    pose=[int(claw),0,0,0,cal.base_angle_to_servo(deg[0])]
-    for name,value in zip(JOINTS[1:],deg[1:]):
+    pose=[int(claw),0,0,0,0]
+    for name,value in zip(JOINTS,deg):
         pose[mc.SERVO_INDEX[name]]=cal.q_to_servo(name,value)
     if any(not lo<=s<=hi for s,(lo,hi) in zip(pose,cal.all_limits())):
         raise ValueError('Rounded solution exceeds calibrated servo limits')
@@ -121,11 +120,16 @@ def plan_motion(m,cal,start,target_mm,result,max_miss_mm=10):
     return waypoints,miss
 
 def demo_calibration():
-    """Synthetic mapping for --simulate only. Never saved as real calibration."""
-    data=dict(joints={},claw=dict(open=40,closed=90,min=40,max=90))
-    for name in JOINTS:
-        data['joints'][name]=dict(points=[[0,0],[90,90],[180,180]],min=0,max=180)
-    # Preserve the same synthetic raw-command mapping, but declare direct DH q.
-    # This is for simulation only; it is never written as measured calibration.
-    return mc.Calibration(mc.Calibration(data).as_joint_data())
+    """Synthetic affine mappings whose joint limits equal miniarm_model.m.
 
+    This is not a claim about physical servo travel. The mapping is never
+    saved as a real calibration. Pitch q=180-2*s spans +/-160 degrees over
+    raw 10..170; base q=s and shoulder q=180-s span 0..180 over raw 0..180.
+    """
+    data=dict(angle_convention='joint',joints={
+        'base':dict(points=[[0,0],[90,90],[180,180]],min=0,max=180),
+        'arm':dict(points=[[0,180],[90,90],[180,0]],min=0,max=180),
+        'forearm':dict(points=[[10,160],[90,0],[170,-160]],min=10,max=170),
+        'wrist':dict(points=[[10,160],[90,0],[170,-160]],min=10,max=170)},
+        claw=dict(open=40,closed=90,min=40,max=90))
+    return mc.Calibration(data)

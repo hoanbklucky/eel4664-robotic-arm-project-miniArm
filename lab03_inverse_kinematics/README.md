@@ -1,4 +1,6 @@
 > **Complete student workflow:** [3D IK lab instructions](STUDENT_GUIDE.md) cover
+
+See the [MATLAB/Python/servo pipeline audit](PYTHON_MATLAB_AUDIT.md) for the shared frames, DH table, calibration equations and verification results.
 > MATLAB verification, Python XYZ preview, calibration, Arduino execution and
 > the required [report template](Lab03_Report_Template.docx).
 > Start the GUI with `python miniarm_controlC.py --simulate` from

@@ -1,5 +1,23 @@
 # Python GUI integration validation
 
+## MATLAB/Python consistency audit (latest)
+
+See [the complete pipeline audit](PYTHON_MATLAB_AUDIT.md). All 49 noninteractive
+tests passed; 2 live Tk tests were skipped without a display. The new tests
+compare the GUI's complete default model, including joint limits and collision
+indices, with MATLAB source, independently check MDH/FK/Jacobian and test the
+actual GUI Calculate/Move/poll code through the emulator for both calibration
+formats. Sources compile. No MATLAB engine, native Tk window or hardware run
+was performed here.
+
+The default synthetic mapping now covers MATLAB's +/-160-degree elbow/wrist
+limits instead of +/-90. For target [100,100,50] mm from upright the solver still
+converges at 0.0103 mm; changed synthetic command resolution makes the rounded
+miss 0.8783 mm. These figures supersede the prior mapping's figures below.
+All four joints use the same DH-q calibration API. Fractional raw inputs are
+rejected, while decimal measured joint angles remain supported. Emulator INIT,
+pre-init guards, mode validation and CFG timing/ranges now match firmware.
+
 ## Reproducible simulation calibration
 
 Default --simulate now uses the synthetic calibration regardless of whether a

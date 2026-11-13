@@ -123,7 +123,9 @@ class Calibration:
         for name in JOINTS:
             i = SERVO_INDEX[name]
             lo, hi = self.limits(i)
-            pose[i] = min(max(self.q_to_servo(name, REFERENCE_Q[name]), lo), hi)
+            pose[i] = self.q_to_servo(name, REFERENCE_Q[name])
+            if not lo <= pose[i] <= hi:
+                raise CalibrationError(f'{name}: upright reference outside calibrated raw limits')
         return pose
 
     # ------------------------------------------------------------------ the IK's angles
@@ -161,7 +163,7 @@ class Calibration:
 
     def base_angle_to_servo(self, angle):
         """Base angle (90 = straight ahead, larger = left) -> servo value."""
-        return round(self.angle_to_servo("base", angle))
+        return self.q_to_servo("base", angle)
 
 
 def _interpolate(pairs, x):
@@ -214,6 +216,8 @@ def check(data):
         if len(pts) < RECOMMENDED_POINTS:
             warnings.append(f"{name}: {len(pts)} points; {RECOMMENDED_POINTS} spread across the range is more accurate")
         servos = [s for s, _ in pts]
+        if any(s != round(s) for s in servos) or lo != round(lo) or hi != round(hi):
+            errors.append(f'{name}: raw commands and raw safe limits must be integers; joint angles may have decimals')
         if any(not 0 <= s <= 180 for s in servos):
             errors.append(f"{name}: servo values must be 0-180")
         if len(set(servos)) != len(servos):
@@ -255,6 +259,8 @@ def check(data):
             if not all(math.isfinite(v) for v in (o,c,lo,hi)):
                 errors.append('claw: settings must be finite numbers')
                 return errors, warnings
+            if any(v != round(v) for v in (o,c,lo,hi)):
+                errors.append('claw: raw commands and limits must be integers')
             if not (0 <= lo < hi <= 180):
                 errors.append("claw: safe range must satisfy 0 <= min < max <= 180")
             elif not (lo <= o <= hi and lo <= c <= hi):
