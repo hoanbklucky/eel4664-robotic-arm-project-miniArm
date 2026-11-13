@@ -316,7 +316,8 @@ class ArmApp:
         self.init_button=tk.Button(setup,command=self.initialize)
         self.init_button.pack(side='right')
         self.update_init_text()
-        panel=tk.Frame(self.root); panel.pack(padx=10)
+        panel=tk.LabelFrame(self.root,text='Manual servo commands — raw values, not DH joint angles',padx=12,pady=6)
+        panel.pack(padx=10,pady=6)
         self.sliders={}
         for col,j in enumerate(DISPLAY_ORDER):
             box=tk.Frame(panel); box.grid(row=0,column=col,padx=7)
@@ -325,12 +326,14 @@ class ArmApp:
             s.set(90); s.pack(); self.sliders[j]=s
         self.manual_button=tk.Button(panel,text='Send manual sliders (APP mode)',command=self.manual)
         self.manual_button.grid(row=1,column=0,columnspan=5)
-        inp=tk.Frame(self.root); inp.pack(pady=8)
-        self.entries=[]
+        inp=tk.LabelFrame(self.root,text='IK target — XYZ in millimetres',padx=10,pady=6); inp.pack(pady=6)
+        self.entries=[]; self.target_values=[]
         for col,(name,value) in enumerate(zip(('X right (mm)','Y forward (mm)','Z up (mm)'),(-40,100,150))):
             tk.Label(inp,text=name).grid(row=0,column=col,padx=10)
-            e=tk.Entry(inp,width=12); e.insert(0,str(value)); e.grid(row=1,column=col,padx=10)
-            e.bind('<KeyRelease>',lambda event:self.invalidate()); self.entries.append(e)
+            variable=tk.StringVar(value=str(value)); self.target_values.append(variable)
+            e=tk.Entry(inp,width=12,textvariable=variable); e.grid(row=1,column=col,padx=10)
+            variable.trace_add('write',lambda *args:self.invalidate())
+            e.bind('<Return>',lambda event:self.calculate()); self.entries.append(e)
         actions=tk.Frame(self.root); actions.pack()
         self.calculate_button=tk.Button(actions,text='Calculate / Preview',command=self.calculate)
         self.calculate_button.pack(side='left',padx=4)
@@ -342,6 +345,11 @@ class ArmApp:
             button.pack(side='left',padx=4); self.grip_buttons.append(button)
         self.save_button=tk.Button(actions,text='Save experiment log',command=self.save_log)
         self.save_button.pack(side='left',padx=4)
+        self.action_hint=tk.StringVar()
+        tk.Label(self.root,textvariable=self.action_hint,wraplength=1000,justify='left',fg='#475569').pack(padx=12,pady=(5,0))
+        self.result_status=tk.StringVar(value='No IK preview calculated.')
+        self.result_label=tk.Label(self.root,textvariable=self.result_status,wraplength=1000,justify='left',font=('Segoe UI',9,'bold'))
+        self.result_label.pack(padx=12,pady=(3,0))
         self.readout=tk.StringVar(value='Position estimate: not initialized')
         tk.Label(self.root,textvariable=self.readout,font=('Consolas',9)).pack(pady=5)
         views=tk.Frame(self.root); views.pack(fill='x',padx=12)
@@ -353,7 +361,7 @@ class ArmApp:
         self.canvas=tk.Canvas(self.root,width=840,height=340,bg='white')
         self.canvas.pack(padx=10,fill='both',expand=True)
         self.canvas.bind('<Configure>',lambda _:self.redraw_preview())
-        self.terminal=scrolledtext.ScrolledText(self.root,width=100,height=9,state='disabled',font=('Consolas',9))
+        self.terminal=scrolledtext.ScrolledText(self.root,width=100,height=5,state='disabled',font=('Consolas',9))
         self.terminal.pack(padx=10,pady=8)
         self.draw()
         self.refresh_controls()
@@ -372,7 +380,7 @@ class ArmApp:
                           relief='sunken' if selected else 'raised',
                           font=('Segoe UI',9,'bold' if selected else 'normal'))
             state(button,enabled)
-        state(getattr(self,'init_button',None),idle)
+        state(getattr(self,'init_button',None),idle and not (self.initialized and self.mode=='K'))
         state(getattr(self,'manual_button',None),enabled and self.mode=='A')
         state(getattr(self,'calculate_button',None),enabled and self.mode=='I' and self.cal is not None)
         state(getattr(self,'move_button',None),enabled and self.mode=='I' and self.preview is not None)
@@ -384,11 +392,29 @@ class ArmApp:
         if hasattr(self,'mode_status'):
             if waiting: text='STOP requested — awaiting Arduino confirmation'
             elif not self.ready: text='Waiting for connection'
-            elif not self.initialized: text='Not initialized — use the startup button to enable controls'
+            elif not self.initialized:
+                text='Initializing — waiting for controller acknowledgement' if self.busy else 'Not initialized — use the startup button to enable controls'
             else:
                 suffix=' — STOPPED (servos holding)' if getattr(self,'stopped',False) else (' — moving' if self.busy else '')
                 text='Active mode: '+MODES[self.mode][0]+suffix
             self.mode_status.set(text)
+        if hasattr(self,'action_hint'):
+            if waiting: hint='Waiting for STOP confirmation and the command-position report.'
+            elif not self.ready: hint='Connect the Arduino, or launch with --simulate for offline work.'
+            elif not self.initialized:
+                hint='Initialization is in progress; wait for the controller acknowledgement.' if self.busy else 'Follow the first-enable procedure, then use the startup button to unlock controls.'
+            elif self.busy: hint=f'Moving: {len(getattr(self,"plan",[]))} waypoint(s) queued after the active command. STOP cancels the remaining plan.'
+            elif self.mode=='K': hint='Knobs drive the arm. Choose APP or IK before requesting an upright move.'
+            elif self.mode=='A': hint='Adjust raw servo sliders, then Send manual sliders. Choose IK to enter an XYZ target.'
+            elif self.preview is not None: hint='Preview is ready. Move Arm executes it; editing XYZ requires a new calculation.'
+            else: hint='Enter XYZ in mm, then Calculate / Preview (or press Enter). This does not move the arm.'
+            self.action_hint.set(hint)
+
+    def feedback(self,message,kind='info'):
+        self.feedback_message=message;self.feedback_kind=kind
+        if hasattr(self,'result_status'): self.result_status.set(message)
+        if hasattr(self,'result_label'):
+            self.result_label.config(fg={'info':'#475569','success':'#15803d','error':'#b91c1c'}[kind])
 
     def log(self,text):
         self.terminal.config(state='normal'); self.terminal.insert('end',text+'\n')
@@ -428,6 +454,7 @@ class ArmApp:
 
     def invalidate(self):
         self.preview=None; self.move_button.config(state='disabled')
+        self.feedback('Preview cleared — calculate again before Move Arm.')
         self._preview_plot=None
         if hasattr(self,'canvas'): self.draw()
         self.refresh_controls()
@@ -446,6 +473,9 @@ class ArmApp:
 
     def initialize(self):
         if not self.ready or self.busy or getattr(self,'stop_pending',False): return
+        if self.initialized and self.mode=='K':
+            message='Choose APP or IK before an upright move; knob mode would move away from upright.'
+            self.log(message); self.feedback(message); return
         try:
             pose=self.start_pose()  # fixed reference; never read manual sliders
             if self.cal:
@@ -457,7 +487,7 @@ class ArmApp:
                 if self.cal:
                     ik.validate_servo_leg(self.m,self.cal,self.positions,pose)
                 self.invalidate()
-                self.mode='A'; self.send('MODE A')
+                self.log('Returning upright; keeping '+MODES[self.mode][0]+'.')
                 self.launch([pose])  # checked, gradual J move, not another INIT
                 return
             self.invalidate()
@@ -469,7 +499,9 @@ class ArmApp:
             else:
                 self.log('First enable: INIT attaches immediately. Physical pose must already be near the displayed reference; no encoder feedback.')
             self.launch([pose],command='INIT')
-        except Exception as e: self.log('Cannot straighten/enable arm: '+str(e))
+        except Exception as e:
+            message='Cannot straighten/enable arm: '+str(e)
+            self.log(message); self.feedback(message,'error')
 
     def launch(self,poses,command='J'):
         self.stopped=False
@@ -503,6 +535,7 @@ class ArmApp:
                 if getattr(self,'stop_pending',False) and self.stop_acknowledged:
                     self.stop_pending=False
                     self.log('STOP confirmed: command steps frozen; servos remain powered to hold position.')
+                    self.feedback('STOP confirmed — commands frozen, servos holding. Calculate again before an IK move.')
                     if getattr(self,'knob_takeover_pending',False):
                         self.knob_takeover_pending=False
                         self.set_mode('K')
@@ -554,6 +587,7 @@ class ArmApp:
             except Exception as e: self.fail(str(e))
         self.invalidate()
         self.log('STOP requested; queued waypoints cancelled. Awaiting confirmation; this does not remove servo power.')
+        self.feedback('STOP requested — waiting for the controller; servo power remains on.')
         self.refresh_controls()
 
     def update_position(self):
@@ -575,19 +609,30 @@ class ArmApp:
             self.log('Load calibration and Initialize before calculating.'); return
         if self.mode!='I': self.log('Select IK CONTROL first.'); return
         try:
-            target=np.array([float(e.get()) for e in self.entries])
-            if not np.isfinite(target).all(): raise ValueError('XYZ must be finite numbers')
+            values=[]
+            for name,entry in zip(('X','Y','Z'),self.entries):
+                try:
+                    value=float(entry.get())
+                    if not np.isfinite(value): raise ValueError
+                except ValueError:
+                    raise ValueError(f'{name} must be a finite number in millimetres') from None
+                values.append(value)
+            target=np.array(values)
             start=list(self.positions); q0=ik.servo_to_q(self.cal,start)
             q,r=ik.inverse_kinematics(target,self.m,q0)
             self.log(f'XYZ {target.tolist()} mm: {r["status"]}; {len(r["history"])-1} updates; residual {r["error"]*1000:.4f} mm')
             if not r['success']:
+                self.feedback(f'No move prepared: {r["status"]}; position error {r["error"]*1000:.2f} mm. Try a reachable target or another clear starting pose.','error')
                 self.draw(q,target,r); return
             waypoints,miss=ik.plan_motion(self.m,self.cal,start,target,r,MAX_MISS_MM)
             self.preview=dict(start=start,target=target,q=q,result=r,waypoints=waypoints)
             self.move_button.config(state='normal')
+            self.feedback(f'Preview ready — IK error {r["error"]*1000:.3f} mm; rounded-command miss {miss:.2f} mm. Move Arm to execute.','success')
             self.log(f'Angles deg {np.rad2deg(q).round(2).tolist()}; rounded miss {miss:.2f} mm; {len(waypoints)} checked J waypoints. Preview only.')
             self.draw(q,target,r)
-        except Exception as e: self.log('Cannot prepare move: '+str(e))
+        except Exception as e:
+            message='Cannot prepare move: '+str(e)
+            self.log(message); self.feedback(message,'error')
         finally: self.refresh_controls()
 
     def move(self):

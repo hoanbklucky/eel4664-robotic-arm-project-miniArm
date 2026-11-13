@@ -118,3 +118,22 @@ instantaneous emergency stop: serial delay and mechanical settling still apply.
 The GUI waits for STOPPED and the next position report before unlocking controls.
 In KNOB mode it exits to APP, and knob takeover cannot restart motion after a user
 STOP until another explicit mode/motion action. The old IK plan is discarded.
+
+## Predictable upright and clearer feedback
+
+After initialization, **Straighten arm upright** is a checked move that preserves
+APP or IK mode and the claw command. It does not silently select APP. In KNOB
+mode it is disabled; the next-step hint explains that APP or IK must be selected
+first so live knob control does not immediately undo the upright pose.
+
+The interface groups raw manual servo commands separately from XYZ targets.
+A next-step line explains the available action and disabled controls. A visible
+result line reports successful previews, solver failures, rounding/path rejection
+and invalid XYZ fields. Enter in an XYZ field runs Calculate / Preview; it never
+sends movement. Only actual XYZ edits invalidate a preview, not navigation keys.
+The selected mode is still highlighted and hardware initialization stays gated.
+
+The calibration window shows unsaved edits, a Check/Save summary and a selectable
+file path. It asks before closing or reloading would discard unsaved measurements;
+a failed validation/save keeps the window and entries intact. It is resizable,
+with the diagnostic area expanding. Saving still writes DH joint-angle mode.

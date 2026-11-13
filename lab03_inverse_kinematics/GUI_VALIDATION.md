@@ -1,5 +1,27 @@
 # Python GUI integration validation
 
+## Predictable upright and workflow feedback (latest)
+
+Post-initialization upright now preserves APP or IK mode and the claw command.
+It does not send MODE A. In KNOB mode the action is disabled and the hint asks
+for APP/IK first, avoiding live knob control undoing the posture. Raw manual
+commands and XYZ targets are grouped; persistent next-action/result lines explain
+mode restrictions, initialization, motion, successful preview and solver/path/input
+failures. Enter calculates only. StringVar write tracking invalidates a preview
+only when XYZ text changes, avoiding the old navigation-key invalidation behavior.
+
+The calibration window tracks actual edits, shows an inline summary and a
+selectable file path, and protects unsaved measurements on close/reload. Failed
+validation or disk writes do not discard entries. Resizing expands diagnostics.
+
+50 noninteractive GUI/adapter tests passed; 2 native Tk tests were skipped without
+a display. Six new checks cover a real checked emulator return to upright from a
+bent pose while retaining IK/claw, APP preservation and KNOB restrictions, visible
+success/failure/input feedback, saved DH metadata and failed writes, close cancel,
+and cancelled reload. Existing initialization/STOP/preview/path tests still pass.
+Python sources compile. Native window layout and physical movement were not
+verified in this environment; no Arduino firmware change is required.
+
 ## Active mode, hardware startup lock and acknowledged STOP (latest)
 
 APP/KNOB/IK buttons now use their green/orange/blue colors and a sunken/bold

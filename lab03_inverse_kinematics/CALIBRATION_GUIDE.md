@@ -168,6 +168,11 @@ geometry.
 
 ## 8. Check, save, reload and validate
 
+The calibration window marks unsaved edits and shows a Check/Save summary.
+Its file path is selectable for copying. Closing or reloading asks before
+unsaved measurements are discarded; if Save fails or validation finds errors,
+your entries remain in the window. New files still save as DH joint-angle mode.
+
 1. Click Check and resolve errors. Re-measure sharp bends or inconsistent
    directions; do not silently edit data to make a curve look smooth.
 2. Save calibration.json, then click Reload calibration in the controller.

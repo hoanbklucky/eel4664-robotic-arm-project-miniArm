@@ -312,6 +312,11 @@ and click Straighten arm upright (or the clearly labeled uncalibrated raw-neutra
 action when collecting the first calibration). STOP and Reload calibration stay
 available; reloading cannot enable the arm. Simulation initializes automatically.
 Controls also lock during movement and while STOP confirmation is pending.
+After initialization, Straighten arm upright preserves APP or IK mode and the
+claw command. In KNOB mode choose APP or IK first; upright is disabled so live
+knobs cannot immediately undo the requested pose. The next-step line explains
+what to do, and the result line shows whether an IK preview succeeded or why
+movement could not be prepared. Pressing Enter in XYZ calculates a preview only.
 
 ## 7. Validate FK and execute XYZ targets
 

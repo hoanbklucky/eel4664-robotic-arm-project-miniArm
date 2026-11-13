@@ -12,7 +12,7 @@ class StartupTests(unittest.TestCase):
     def app(self):
         app=gui.ArmApp.__new__(gui.ArmApp)
         app.cal=ik.demo_calibration();app.m=ik.model(gui.GEOMETRY,app.cal)
-        app.ready=True;app.busy=False;app.initialized=False
+        app.ready=True;app.busy=False;app.initialized=False;app.mode='A'
         app.positions=ik.q_to_servo(app.cal,app.m.q0,75)
         app.send=Mock();app.launch=Mock();app.invalidate=Mock();app.log=Mock()
         app.sliders={i:Mock() for i in range(5)}

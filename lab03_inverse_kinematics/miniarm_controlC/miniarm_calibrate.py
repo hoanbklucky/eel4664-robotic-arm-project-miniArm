@@ -18,7 +18,7 @@ The file is saved next to this program as calibration.json.
 import os
 import math
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import scrolledtext, messagebox
 
 import miniarm_calibration as mc
 
@@ -92,10 +92,11 @@ class CalibrateApp:
     def __init__(self, root):
         self.root = root
         root.title("miniArm Joint-angle Calibration for XYZ IK")
-        root.resizable(False, False)
+        root.resizable(True, True)
         self.entries = {}       # joint -> list of (servo Entry, angle Entry)
         self.ranges = {}        # joint or "claw" -> (min Entry, max Entry)
         self.plots = {}
+        self.dirty=False; self.loading=False; self.variables=[]
 
         tk.Label(root, justify="left", font=("Segoe UI", 9), padx=12, pady=8, wraplength=1000, text=(
             "XYZ targets -> IK joint angles q -> calibrated raw servo commands. This form measures JOINT angles; enter XYZ in the controller.\n"
@@ -109,13 +110,41 @@ class CalibrateApp:
             self._build_joint(grid, name).grid(row=n // 2, column=n % 2, padx=6, pady=6, sticky="n")
 
         self._build_claw_and_buttons()
+        self.summary=tk.StringVar(value='Enter measured DH joint angles; Check, then Save.')
+        self.summary_label=tk.Label(root,textvariable=self.summary,wraplength=1000,justify='left',font=('Segoe UI',9,'bold'))
+        self.summary_label.pack(fill='x',padx=12,pady=5)
         self.messages = scrolledtext.ScrolledText(root, width=110, height=7, font=("Consolas", 9),
                                                   state="disabled", wrap="word")
-        self.messages.pack(padx=12, pady=(0, 12))
+        self.messages.pack(padx=12, pady=(0, 12), fill="both", expand=True)
         for tag, color in (("error", "#e03131"), ("warn", "#e8590c"), ("ok", "#2b8a3e")):
             self.messages.tag_config(tag, foreground=color)
 
         self.load()
+        root.protocol('WM_DELETE_WINDOW',self.close)
+
+    def summary_message(self,text,kind='info'):
+        self.summary_text=text
+        if hasattr(self,'summary'):self.summary.set(text)
+        if hasattr(self,'summary_label'):
+            self.summary_label.config(fg={'info':'#475569','error':'#b91c1c','success':'#15803d'}[kind])
+
+    def watch_entry(self,entry,name=None):
+        value=tk.StringVar(value=entry.get());self.variables.append(value)
+        entry.config(textvariable=value)
+        value.trace_add('write',lambda *args:self.edited(name))
+
+    def edited(self,name=None):
+        if getattr(self,'loading',False):return
+        self.dirty=True
+        self.summary_message('Unsaved measurements — angles are DH q in degrees. Check and Save when ready.')
+        if name is not None:self.draw(name)
+
+    def close(self):
+        if getattr(self,'dirty',False):
+            choice=messagebox.askyesnocancel('Unsaved calibration','Save your calibration measurements before closing?',parent=self.root)
+            if choice is None:return
+            if choice and not self.save():return
+        self.root.destroy()
 
     # ------------------------------------------------------------------ layout
     def _build_joint(self, parent, name):
@@ -134,7 +163,7 @@ class CalibrateApp:
             s.grid(row=r + 1, column=1, padx=2, pady=1)
             a.grid(row=r + 1, column=2, padx=2, pady=1)
             for e in (s, a):
-                e.bind("<KeyRelease>", lambda ev, n=name: self.draw(n))
+                self.watch_entry(e,name)
             rows.append((s, a))
         self.entries[name] = rows
 
@@ -147,7 +176,7 @@ class CalibrateApp:
         tk.Label(rng, text="to", font=("Segoe UI", 8)).pack(side="left")
         hi.pack(side="left", padx=2)
         for e in (lo, hi):
-            e.bind("<KeyRelease>", lambda ev, n=name: self.draw(n))
+            self.watch_entry(e,name)
         self.ranges[name] = (lo, hi)
 
         c = tk.Canvas(frame, width=PLOT_W, height=PLOT_H, bg="white", highlightthickness=1,
@@ -168,6 +197,7 @@ class CalibrateApp:
             e = tk.Entry(claw, width=6, justify="center")
             e.grid(row=1, column=col, padx=6)
             self.claw[key] = e
+            self.watch_entry(e)
 
         buttons = tk.Frame(bar)
         buttons.pack(side="right")
@@ -175,8 +205,9 @@ class CalibrateApp:
         tk.Button(buttons, text="Reload file", width=10, command=self.load).pack(side="left", padx=4)
         tk.Button(buttons, text="Save", width=10, bg="#2b8a3e", fg="white",
                   font=("Segoe UI", 9, "bold"), command=self.save).pack(side="left", padx=4)
-        tk.Label(self.root, text=f"File: {CALIBRATION_FILE}", font=("Segoe UI", 8), fg="#666",
-                 padx=14).pack(anchor="w")
+        self.file_path=tk.StringVar(value=CALIBRATION_FILE)
+        tk.Label(self.root,text='Calibration file (select path to copy):',font=('Segoe UI',8)).pack(anchor='w',padx=14)
+        tk.Entry(self.root,textvariable=self.file_path,state='readonly',font=('Segoe UI',8)).pack(fill='x',padx=14)
 
     # ------------------------------------------------------------------ messages
     def show_help(self):
@@ -259,6 +290,9 @@ class CalibrateApp:
             self.say("  warning " + w, "warn")
         if not errors:
             self.say("  OK: this calibration can be saved." + (" (See the warnings.)" if warnings else ""), "ok")
+        self.summary_message(f'Check found {len(errors)} error(s); fix the entries listed below.' if errors else
+                             f'Ready to save in DH joint-angle mode ({len(warnings)} warning(s)).',
+                             'error' if errors else 'success')
         for name in mc.JOINTS:
             self.draw(name)
         return data, errors
@@ -266,10 +300,16 @@ class CalibrateApp:
     def save(self):
         data, errors = self.check()
         if errors:
-            self.say("Not saved: fix the errors first.", "error")
-            return
-        mc.Calibration.save(self._as_ints(data), CALIBRATION_FILE)
-        self.say(f"Saved {CALIBRATION_FILE}. Click \"Reload calibration\" in miniarm_controlC.py.", "ok")
+            self.say('Not saved: fix the errors first.','error');return False
+        try:
+            mc.Calibration.save(self._as_ints(data),CALIBRATION_FILE)
+        except OSError as e:
+            self.say(f'Could not save: {e}','error')
+            self.summary_message('Save failed — measurements remain in this window.','error');return False
+        self.dirty=False
+        self.say(f'Saved {CALIBRATION_FILE}. Click Reload calibration in miniarm_controlC.py.','ok')
+        self.summary_message('Saved in DH joint-angle mode — click Reload calibration in the control GUI.','success')
+        return True
 
     def load(self):
         if not os.path.exists(CALIBRATION_FILE):
@@ -282,8 +322,16 @@ class CalibrateApp:
             data = loaded.as_joint_data()
         except mc.CalibrationError as e:
             self.say(str(e), "error", clear=True)
+            self.summary_message('Could not load calibration — see the error below.','error')
             return
-        self.fill_form(data)
+        if getattr(self,'dirty',False) and not messagebox.askyesno(
+                'Discard unsaved measurements?','Reload the file and discard measurements edited in this window?',parent=self.root):
+            return
+        self.loading=True
+        try:self.fill_form(data)
+        finally:self.loading=False
+        self.dirty=False
+        self.summary_message('Loaded calibration — edits will be saved as DH joint angles.')
         for name in mc.JOINTS:
             self.draw(name)
         self.say(f"Loaded {CALIBRATION_FILE}.", "ok", clear=True)
