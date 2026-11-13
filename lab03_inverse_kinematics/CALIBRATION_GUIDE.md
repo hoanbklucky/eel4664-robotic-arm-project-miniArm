@@ -24,9 +24,11 @@ At a 200 mm reach, even a 5-degree angular error can produce roughly 17 mm of
 position error. Calibration helps correct systematic command/angle differences;
 it does not eliminate sag, backlash, measurement error or incorrect link lengths.
 
-Without hardware, the --simulate controller supplies a clearly labeled
-synthetic mapping. It is not an actual measurement and must not be used as an
-arm's hardware calibration.
+Without hardware, `--simulate` supplies a clearly labeled synthetic mapping,
+ignoring any saved calibration.json without changing it. This keeps offline
+exercises reproducible. Use `--simulate --use-calibration` explicitly to test
+that saved hardware mapping and its limits. A synthetic mapping is not an
+actual measurement and must not be used as an arm's hardware calibration.
 
 ## 2. XYZ targets and angle measurements are compatible
 

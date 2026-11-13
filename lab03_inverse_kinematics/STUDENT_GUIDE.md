@@ -155,8 +155,13 @@ Use the same Python interpreter for installation and execution. The standard
 Windows Python installer includes Tkinter; on Linux install your distribution's
 Tk package if needed.
 
-No Arduino connection is opened in this mode. Without `calibration.json`, the
-GUI uses a labeled **synthetic calibration** for offline testing only.
+No Arduino connection is opened in this mode. By default, `--simulate` uses a
+labeled **synthetic calibration** and ignores any local `calibration.json`, so
+the offline exercise is reproducible. It does not overwrite your saved file.
+To deliberately test a measured hardware mapping and its limits offline, run
+`python miniarm_controlC.py --simulate --use-calibration`. The banner identifies
+which calibration is active. An invalid/missing file in that explicit mode is
+reported as an error; it is not replaced by a synthetic mapping.
 
 1. Click **Straighten arm upright** to initialize the emulator at
    q=[90,90,0,0] degrees: base forward, upper arm vertical, elbow and wrist
@@ -165,7 +170,11 @@ GUI uses a labeled **synthetic calibration** for offline testing only.
 3. Enter X, Y and Z in **millimetres**, for example `-40`, `100`, `150`.
 4. Click **Calculate / Preview**. Inspect the arm, target, calculated angles,
    position error and error curve. This does not send a movement.
-5. Click **Move Arm** to execute the checked sequence in the emulator.
+5. Click **Move Arm** to execute the checked sequence in the emulator. A
+   purple preview alone does not mean success: if the status is stalled or the
+   residual remains large, Move Arm stays disabled. The example [100,100,50] mm
+   converges from upright with the synthetic calibration. Saved calibration
+   with incorrect angle references can exclude the joint angles it needs.
 6. Save a screenshot and experiment log.
 
 The preview defaults to **Rear right (Arduino side)**: an orthographic view

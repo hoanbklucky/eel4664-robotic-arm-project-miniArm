@@ -12,7 +12,19 @@ python miniarm_controlC.py --simulate
 
 Click **Straighten arm upright**, select **IK CONTROL**, enter XYZ mm,
 click **Calculate / Preview**, then **Move Arm**. Offline mode opens no serial
-port. Its fallback synthetic calibration is not a measured hardware calibration.
+port. By default it uses synthetic calibration and ignores local calibration.json;
+that synthetic mapping is not a measured hardware calibration. Your file is not
+changed. To test the saved hardware calibration and limits in the emulator:
+
+```console
+python miniarm_controlC.py --simulate --use-calibration
+```
+
+The banner distinguishes synthetic and saved-calibration modes. Reload in
+synthetic mode explains how to switch; it cannot silently load a saved file.
+Hardware mode continues to use the saved calibration. A purple preview can also
+show a failed solver attempt: check its status/residual. Move Arm is enabled
+only after successful IK and checked servo-path preparation.
 
 The preview starts in **Rear right (Arduino side)** view, looking from above.
 Use the Preview camera menu for Rear, Top or Right side. The colored arrows are

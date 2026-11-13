@@ -1,5 +1,28 @@
 # Python GUI integration validation
 
+## Reproducible simulation calibration
+
+Default --simulate now uses the synthetic calibration regardless of whether a
+local calibration.json exists. --simulate --use-calibration explicitly loads
+the saved hardware mapping and fails on invalid/missing data. Hardware still
+uses measured calibration. Synthetic mode cannot silently switch mappings via
+Reload calibration. No saved calibration file is rewritten by this change.
+
+Five new noninteractive tests passed. The instructor screenshot was reproduced
+from its visible older table: elbow/wrist limits become [0,180] degrees, and
+[100,100,50] mm from upright stalls after 45 updates at 93.2305 mm error. With
+default synthetic calibration, the same target converges in 42 updates with
+0.0103 mm residual; the rounded plan has 42 checked waypoints and 0.4437 mm
+predicted final miss. Every sequential leg was checked again in the regression.
+The other 22 noninteractive GUI/adapter tests passed (27 total in this revision);
+one native Tk preview test was skipped without a display. Source compiles.
+No native window or physical hardware execution is claimed.
+
+The screenshot failure comes from interpreting entered angles under the older
+calibration convention. This change isolates offline exercises; it does not
+repair a hardware calibration with mixed angle references. Preserve the measured
+file and verify its entries using CALIBRATION_GUIDE.md before hardware use.
+
 ## Fixed upright initialization
 
 The calibrated startup target is q=[90,90,0,0] degrees, independent of sliders

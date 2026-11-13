@@ -105,6 +105,23 @@ def calibration_path():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), CALIBRATION_FILE)
 
 
+def load_startup_calibration(simulate, use_calibration=False):
+    """Offline exercises are reproducible even if hardware calibration exists.
+
+    --simulate --use-calibration explicitly tests the saved mapping and limits.
+    Never replace an explicitly requested file with a synthetic mapping.
+    Hardware without calibration keeps the supervised raw-neutral workflow.
+    """
+    if simulate and not use_calibration:
+        return ik.demo_calibration(), True
+    try:
+        return mc.Calibration.load(calibration_path()), False
+    except mc.CalibrationError:
+        if simulate:
+            raise  # explicit saved-calibration test must report invalid/missing data
+        return None, False
+
+
 # =============================================================================
 # Connections: the real arm, or a simulated one
 # =============================================================================
@@ -242,7 +259,7 @@ class SimulatedArm:
 
 
 class ArmApp:
-    def __init__(self, root, simulate=False, port='COM11'):
+    def __init__(self, root, simulate=False, port='COM11', use_calibration=False):
         self.root=root; root.title('miniArm 3D XYZ Control')
         self.inbox=queue.Queue(); self.link=None; self.ready=False
         self.mode='A'; self.positions=[90]*5; self.commanded=[90]*5
@@ -250,10 +267,7 @@ class ArmApp:
         self.preview=None; self.plan=[]; self.active=None; self.started=0
         self._preview_plot=None
         self.knobs=None; self.knob_baseline=None; self.synthetic=False
-        try: self.cal=mc.Calibration.load(calibration_path())
-        except mc.CalibrationError: self.cal=None
-        if simulate and self.cal is None:
-            self.cal=ik.demo_calibration(); self.synthetic=True
+        self.cal,self.synthetic=load_startup_calibration(simulate,use_calibration)
         self.m=ik.model(GEOMETRY,self.cal)
         self._build()
         if simulate:
@@ -263,8 +277,13 @@ class ArmApp:
         else:
             try: self.link=SerialLink(port,BAUD_RATE,self.inbox)
             except Exception as e: self.log(f'Connection failed: {e}. Use --simulate for offline work.')
-        self.status.set('SIMULATION: no physical movement' if simulate else f'Hardware port: {port}')
-        if self.synthetic: self.log('SIMULATION uses a synthetic calibration, not measurements.')
+        self.status.set(('SIMULATION: synthetic calibration; no physical movement' if self.synthetic else
+                         'SIMULATION: saved hardware calibration; no physical movement')
+                        if simulate else f'Hardware port: {port}')
+        if self.synthetic:
+            self.log('SIMULATION uses synthetic calibration; local calibration.json is ignored. Use --simulate --use-calibration to test your measured mapping.')
+        elif self.cal:
+            self.log(f'Saved calibration loaded: {self.cal.angle_convention} angle convention. Check angle references if IK limits seem wrong.')
         self.log('Connection leaves servos off. With calibration, arrange the unloaded arm upright before first enable; the upright command ignores sliders.')
         self.root.after(20,self.poll)
         root.protocol('WM_DELETE_WINDOW',self.close)
@@ -503,6 +522,9 @@ class ArmApp:
         except Exception as e: self.fail(str(e))
 
     def reload(self):
+        if self.synthetic:
+            self.log('Synthetic simulation ignores calibration.json. Restart with --simulate --use-calibration to test a saved calibration; hardware files have not been changed.')
+            return
         if self.busy: self.log('Stop movement before reloading calibration.'); return
         try:
             cal=mc.Calibration.load(calibration_path()); m=ik.model(GEOMETRY,cal)
@@ -616,8 +638,14 @@ class ArmApp:
 if __name__=='__main__':
     import argparse
     p=argparse.ArgumentParser(description='miniArm XYZ GUI; explicit offline mode')
-    p.add_argument('--simulate',action='store_true')
+    p.add_argument('--simulate',action='store_true',help='Offline emulator with synthetic calibration; ignores local calibration.json')
+    p.add_argument('--use-calibration',action='store_true',help='With --simulate, explicitly load and test the saved hardware calibration')
     p.add_argument('--port',default=SERIAL_PORT)
     args=p.parse_args()
-    root=tk.Tk(); app=ArmApp(root,simulate=args.simulate,port=args.port); root.mainloop()
+    root=tk.Tk()
+    try:
+        app=ArmApp(root,simulate=args.simulate,port=args.port,use_calibration=args.use_calibration)
+    except mc.CalibrationError as e:
+        root.destroy(); p.error(str(e))
+    root.mainloop()
 
