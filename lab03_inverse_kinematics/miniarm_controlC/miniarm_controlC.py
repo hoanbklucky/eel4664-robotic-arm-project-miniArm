@@ -275,6 +275,7 @@ class ArmApp:
         self.preview=None; self.plan=[]; self.active=None; self.started=0
         self._preview_plot=None
         self.knobs=None; self.knob_baseline=None; self.synthetic=False
+        self.stopped=False; self.stop_pending=False; self.stop_acknowledged=False; self.knob_takeover_pending=False
         self.cal,self.synthetic=load_startup_calibration(simulate,use_calibration)
         self.m=ik.model(GEOMETRY,self.cal)
         self._build()
@@ -299,10 +300,16 @@ class ArmApp:
 
     def _build(self):
         bar=tk.Frame(self.root); bar.pack(fill='x',padx=10,pady=8)
+        self.mode_buttons={}
         for mode in ('A','K','I'):
-            tk.Button(bar,text=MODES[mode][0],command=lambda m=mode:self.set_mode(m)).pack(side='left',padx=3)
-        tk.Button(bar,text='STOP',bg='#c92a2a',fg='white',command=self.stop).pack(side='left',padx=6)
-        tk.Button(bar,text='Reload calibration',command=self.reload).pack(side='left')
+            button=tk.Button(bar,text=MODES[mode][0],command=lambda m=mode:self.set_mode(m))
+            button.pack(side='left',padx=3); self.mode_buttons[mode]=button
+        self.stop_button=tk.Button(bar,text='STOP',bg='#c92a2a',fg='white',command=self.stop)
+        self.stop_button.pack(side='left',padx=6)
+        self.reload_button=tk.Button(bar,text='Reload calibration',command=self.reload)
+        self.reload_button.pack(side='left')
+        self.mode_status=tk.StringVar(value='Not initialized')
+        tk.Label(self.root,textvariable=self.mode_status,font=('Segoe UI',10,'bold')).pack()
         self.status=tk.StringVar(); tk.Label(self.root,textvariable=self.status).pack()
         setup=tk.Frame(self.root); setup.pack(fill='x',padx=12)
         self.init_text=tk.StringVar(); tk.Label(setup,textvariable=self.init_text).pack(side='left')
@@ -316,7 +323,8 @@ class ArmApp:
             lo,hi=self.limit(j)
             s=tk.Scale(box,from_=hi,to=lo,length=140,label=JOINT_NAMES[j])
             s.set(90); s.pack(); self.sliders[j]=s
-        tk.Button(panel,text='Send manual sliders (APP mode)',command=self.manual).grid(row=1,column=0,columnspan=5)
+        self.manual_button=tk.Button(panel,text='Send manual sliders (APP mode)',command=self.manual)
+        self.manual_button.grid(row=1,column=0,columnspan=5)
         inp=tk.Frame(self.root); inp.pack(pady=8)
         self.entries=[]
         for col,(name,value) in enumerate(zip(('X right (mm)','Y forward (mm)','Z up (mm)'),(-40,100,150))):
@@ -324,12 +332,16 @@ class ArmApp:
             e=tk.Entry(inp,width=12); e.insert(0,str(value)); e.grid(row=1,column=col,padx=10)
             e.bind('<KeyRelease>',lambda event:self.invalidate()); self.entries.append(e)
         actions=tk.Frame(self.root); actions.pack()
-        tk.Button(actions,text='Calculate / Preview',command=self.calculate).pack(side='left',padx=4)
+        self.calculate_button=tk.Button(actions,text='Calculate / Preview',command=self.calculate)
+        self.calculate_button.pack(side='left',padx=4)
         self.move_button=tk.Button(actions,text='Move Arm',state='disabled',command=self.move)
         self.move_button.pack(side='left',padx=4)
-        tk.Button(actions,text='Open claw',command=lambda:self.grip(False)).pack(side='left',padx=4)
-        tk.Button(actions,text='Close claw',command=lambda:self.grip(True)).pack(side='left',padx=4)
-        tk.Button(actions,text='Save experiment log',command=self.save_log).pack(side='left',padx=4)
+        self.grip_buttons=[]
+        for text,closed in [('Open claw',False),('Close claw',True)]:
+            button=tk.Button(actions,text=text,command=lambda c=closed:self.grip(c))
+            button.pack(side='left',padx=4); self.grip_buttons.append(button)
+        self.save_button=tk.Button(actions,text='Save experiment log',command=self.save_log)
+        self.save_button.pack(side='left',padx=4)
         self.readout=tk.StringVar(value='Position estimate: not initialized')
         tk.Label(self.root,textvariable=self.readout,font=('Consolas',9)).pack(pady=5)
         views=tk.Frame(self.root); views.pack(fill='x',padx=12)
@@ -344,6 +356,39 @@ class ArmApp:
         self.terminal=scrolledtext.ScrolledText(self.root,width=100,height=9,state='disabled',font=('Consolas',9))
         self.terminal.pack(padx=10,pady=8)
         self.draw()
+        self.refresh_controls()
+
+    def refresh_controls(self):
+        """One place for mode highlighting and initialization/motion gating."""
+        waiting=getattr(self,'stop_pending',False)
+        idle=self.ready and not self.busy and not waiting
+        enabled=idle and self.initialized
+        def state(widget,allow):
+            if widget is not None and hasattr(widget,'config'): widget.config(state='normal' if allow else 'disabled')
+        for mode,button in getattr(self,'mode_buttons',{}).items():
+            selected=self.initialized and mode==self.mode
+            color=MODES[mode][1] if selected else '#e5e7eb'
+            button.config(bg=color,activebackground=color,fg='white' if selected else '#334155',
+                          relief='sunken' if selected else 'raised',
+                          font=('Segoe UI',9,'bold' if selected else 'normal'))
+            state(button,enabled)
+        state(getattr(self,'init_button',None),idle)
+        state(getattr(self,'manual_button',None),enabled and self.mode=='A')
+        state(getattr(self,'calculate_button',None),enabled and self.mode=='I' and self.cal is not None)
+        state(getattr(self,'move_button',None),enabled and self.mode=='I' and self.preview is not None)
+        for button in getattr(self,'grip_buttons',[]):state(button,enabled and self.mode!='K' and self.cal is not None)
+        state(getattr(self,'save_button',None),enabled)
+        state(getattr(self,'reload_button',None),not self.busy and not waiting)
+        for slider in getattr(self,'sliders',{}).values():state(slider,enabled and self.mode=='A')
+        for entry in getattr(self,'entries',[]):state(entry,enabled and self.mode=='I')
+        if hasattr(self,'mode_status'):
+            if waiting: text='STOP requested — awaiting Arduino confirmation'
+            elif not self.ready: text='Waiting for connection'
+            elif not self.initialized: text='Not initialized — use the startup button to enable controls'
+            else:
+                suffix=' — STOPPED (servos holding)' if getattr(self,'stopped',False) else (' — moving' if self.busy else '')
+                text='Active mode: '+MODES[self.mode][0]+suffix
+            self.mode_status.set(text)
 
     def log(self,text):
         self.terminal.config(state='normal'); self.terminal.insert('end',text+'\n')
@@ -385,19 +430,22 @@ class ArmApp:
         self.preview=None; self.move_button.config(state='disabled')
         self._preview_plot=None
         if hasattr(self,'canvas'): self.draw()
+        self.refresh_controls()
 
     def set_mode(self,mode):
+        if not self.ready or not self.initialized or getattr(self,'stop_pending',False):
+            self.log('Initialize the arm before selecting a mode.'); return
         if self.busy:
             self.log('Press STOP before changing mode.'); return
-        self.invalidate(); self.mode=mode
+        self.invalidate(); self.mode=mode; self.stopped=False
         self.knob_baseline=list(self.knobs) if self.knobs else None
         if self.ready:
             try: self.send('MODE '+mode)
             except Exception as e: self.log(str(e))
-        self.log('Mode: '+MODES[mode][0])
+        self.log('Mode: '+MODES[mode][0]); self.refresh_controls()
 
     def initialize(self):
-        if not self.ready or self.busy: return
+        if not self.ready or self.busy or getattr(self,'stop_pending',False): return
         try:
             pose=self.start_pose()  # fixed reference; never read manual sliders
             if self.cal:
@@ -424,13 +472,15 @@ class ArmApp:
         except Exception as e: self.log('Cannot straighten/enable arm: '+str(e))
 
     def launch(self,poses,command='J'):
+        self.stopped=False
+        self.knob_baseline=list(self.knobs) if getattr(self,'knobs',None) else None
         self.plan=[list(p) for p in poses]; self.active=command
-        self.busy=True; self.next_waypoint()
+        self.busy=True; self.refresh_controls(); self.next_waypoint()
 
     def next_waypoint(self):
         if not self.plan:
             self.busy=False; self.pending=None
-            self.log('Command sequence finished (estimated position; no encoder feedback).'); return
+            self.log('Command sequence finished (estimated position; no encoder feedback).'); self.refresh_controls(); return
         self.pending=self.plan.pop(0); self.started=time.monotonic()
         self.send(self.active+' '+' '.join(map(str,self.pending)))
 
@@ -441,6 +491,7 @@ class ArmApp:
             if not parts: continue
             if line.endswith('READY'):
                 self.ready=True; self.initialized=False; self.busy=False
+                self.stopped=False; self.stop_pending=False; self.stop_acknowledged=False; self.knob_takeover_pending=False
                 self.plan=[]; self.pending=None; self.invalidate()
                 if getattr(self.link,'simulated',False):
                     self.log('Emulator READY. Preparing upright reference for direct IK preview.')
@@ -449,6 +500,16 @@ class ArmApp:
                     self.log('Arduino READY. Servos off; initialize explicitly.')
             elif parts[0]=='P' and len(parts)==6:
                 self.positions=[int(v) for v in parts[1:]]; self.update_position()
+                if getattr(self,'stop_pending',False) and self.stop_acknowledged:
+                    self.stop_pending=False
+                    self.log('STOP confirmed: command steps frozen; servos remain powered to hold position.')
+                    if getattr(self,'knob_takeover_pending',False):
+                        self.knob_takeover_pending=False
+                        self.set_mode('K')
+            elif line=='STOPPED':
+                self.stop_acknowledged=True
+            elif parts[0]=='MODE' and len(parts)==2 and parts[1] in MODES:
+                self.mode=parts[1]
             elif line=='OK' and self.pending is not None:
                 self.positions=list(self.pending); self.commanded=list(self.pending)
                 if self.active=='INIT': self.initialized=True
@@ -463,29 +524,37 @@ class ArmApp:
                 self.knobs=[int(v) for v in parts[1:]]
                 if self.knob_baseline is None: self.knob_baseline=list(self.knobs)
                 threshold=KNOB_TAKEOVER_DEG/180*1023
-                if self.initialized and self.mode!='K' and any(abs(a-b)>threshold for a,b in zip(self.knobs,self.knob_baseline)):
-                    self.stop(); self.set_mode('K'); self.log('Knob takeover: IK preview cancelled.')
+                if self.initialized and not getattr(self,'stopped',False) and self.mode!='K' and any(abs(a-b)>threshold for a,b in zip(self.knobs,self.knob_baseline)):
+                    self.stop(); self.knob_takeover_pending=True
+                    self.log('Knob takeover: cancelling IK; knob mode starts after STOP confirmation.')
             elif parts[0]=='ERR': self.fail(line)
         if self.busy and time.monotonic()-self.started>30:
             self.stop(); self.log('Move timed out. Check connection and pose before reinitializing.')
             self.initialized=False
+        self.refresh_controls()
         self.root.after(20,self.poll)
 
     def fail(self,message):
         self.log(message); self.plan=[]; self.pending=None; self.busy=False; self.invalidate()
-        self.initialized=False
+        self.initialized=False; self.stop_pending=False
         if self.ready and self.link:
             try: self.link.send('STOP')
             except Exception: self.ready=False
+        self.refresh_controls()
 
     def stop(self):
-        self.plan=[]; self.pending=None; self.busy=False; self.invalidate()
+        # Cancel future sends first; send STOP before redrawing anything.
+        self.plan=[]; self.pending=None; self.busy=False; self.stopped=True
+        self.stop_pending=False; self.stop_acknowledged=False; self.knob_takeover_pending=False
         if self.ready:
             try:
                 if self.mode=='K': self.link.send('MODE A'); self.mode='A'
+                self.stop_pending=True
                 self.link.send('STOP')
             except Exception as e: self.fail(str(e))
-        self.log('STOP requested; queued waypoints cancelled.')
+        self.invalidate()
+        self.log('STOP requested; queued waypoints cancelled. Awaiting confirmation; this does not remove servo power.')
+        self.refresh_controls()
 
     def update_position(self):
         for j,s in self.sliders.items(): s.set(self.positions[j])
@@ -500,7 +569,7 @@ class ArmApp:
         else: self.draw()
 
     def calculate(self):
-        if self.busy: self.log('Wait for motion or press STOP first.'); return
+        if self.busy or getattr(self,'stop_pending',False): self.log('Wait for motion/STOP confirmation first.'); return
         self.invalidate()
         if not self.cal or not self.initialized:
             self.log('Load calibration and Initialize before calculating.'); return
@@ -519,9 +588,10 @@ class ArmApp:
             self.log(f'Angles deg {np.rad2deg(q).round(2).tolist()}; rounded miss {miss:.2f} mm; {len(waypoints)} checked J waypoints. Preview only.')
             self.draw(q,target,r)
         except Exception as e: self.log('Cannot prepare move: '+str(e))
+        finally: self.refresh_controls()
 
     def move(self):
-        if self.busy or self.mode!='I' or not self.initialized or not self.preview: return
+        if self.busy or getattr(self,'stop_pending',False) or self.mode!='I' or not self.initialized or not self.preview: return
         p=self.preview
         try:
             if not np.array_equal(p['target'],[float(e.get()) for e in self.entries]):
@@ -532,14 +602,14 @@ class ArmApp:
         except Exception as e: self.fail(str(e))
 
     def manual(self):
-        if self.busy or not self.initialized or self.mode!='A':
+        if self.busy or getattr(self,'stop_pending',False) or not self.initialized or self.mode!='A':
             self.log('Manual controls require initialized APP mode and no active move.'); return
         self.invalidate()
         try: self.launch([[int(self.sliders[j].get()) for j in range(5)]])
         except Exception as e: self.fail(str(e))
 
     def grip(self,closed):
-        if self.busy or not self.initialized or self.mode=='K' or not self.cal: return
+        if self.busy or getattr(self,'stop_pending',False) or not self.initialized or self.mode=='K' or not self.cal: return
         self.invalidate(); pose=list(self.positions)
         pose[0]=self.cal.claw_closed if closed else self.cal.claw_open
         try: self.launch([pose])
@@ -549,7 +619,7 @@ class ArmApp:
         if self.synthetic:
             self.log('Synthetic simulation ignores calibration.json. Restart with --simulate --use-calibration to test a saved calibration; hardware files have not been changed.')
             return
-        if self.busy: self.log('Stop movement before reloading calibration.'); return
+        if self.busy or getattr(self,'stop_pending',False): self.log('Wait for movement/STOP confirmation before reloading calibration.'); return
         try:
             cal=mc.Calibration.load(calibration_path()); m=ik.model(GEOMETRY,cal)
             self.cal=cal; self.m=m; self.synthetic=False
@@ -562,6 +632,7 @@ class ArmApp:
             else:
                 self.log('Calibration loaded; servos require explicit initialization. Arrange the arm upright before first enable, then Straighten arm upright.')
         except Exception as e: self.log(str(e))
+        finally: self.refresh_controls()
 
     def redraw_preview(self):
         """Retain the same calculated preview when selecting/resizing a view."""

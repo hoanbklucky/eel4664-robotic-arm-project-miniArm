@@ -301,6 +301,18 @@ do not fully model the camera, fingers, held objects or surrounding equipment.
 Use instructor guidance while calibrating; no collision-code development is
 required for this lab.
 
+### Mode indication and initialization controls
+
+The selected mode button is colored and pressed in: APP green, KNOB orange,
+IK blue. The text status also identifies the active mode and whether movement
+is active, STOP is pending, or commands are stopped. On real hardware, mode
+buttons, sliders, XYZ entries, Calculate/Move and claw controls remain gray
+until the startup command is acknowledged. Follow the first-enable procedure
+and click Straighten arm upright (or the clearly labeled uncalibrated raw-neutral
+action when collecting the first calibration). STOP and Reload calibration stay
+available; reloading cannot enable the arm. Simulation initializes automatically.
+Controls also lock during movement and while STOP confirmation is pending.
+
 ## 7. Validate FK and execute XYZ targets
 
 For three distinct, clear poses, record mathematical joint angles, predicted
@@ -320,7 +332,16 @@ executes base → shoulder → elbow → wrist → claw. Python checks each raw-
 step, including calibration knots, before enabling movement. The firmware
 reports issued servo commands, not measured shaft angles. It cannot detect
 stall, sag, slippage or a physical collision. STOP cancels the remaining queue
-and asks Arduino to hold its current commands; it is a software stop.
+and sends STOP before redrawing the preview. Once Arduino processes it, the
+sketch stops issuing movement steps and holds its current commanded positions.
+Servos remain powered; STOP does not detach servos or remove power. USB/serial
+latency and mechanical settling mean this is not a guaranteed instantaneous
+emergency stop. The GUI waits for STOPPED and a following command-position report
+before unlocking controls. This confirms command handling, not physical stillness.
+In KNOB mode, STOP first switches to APP so knob control cannot immediately resume.
+Automatic knob takeover stays suppressed after a user STOP until an explicit mode
+selection or movement request. A stopped IK plan is discarded: Calculate again
+before Move Arm.
 
 Changing the target, calibration or mode requires a new preview. A reset or
 communication failure requires re-establishing the pose and initialization.

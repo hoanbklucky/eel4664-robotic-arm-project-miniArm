@@ -103,3 +103,18 @@ The control sliders are labeled **Base, Shoulder, Elbow, Wrist, Claw** to name
 the joints consistently with the DH-angle readout and calibration form. Existing
 JSON keys `arm` (shoulder) and `forearm` (elbow) are retained for compatibility;
 existing calibration files need no renaming.
+
+## Active mode, startup lock and STOP
+
+The active mode is highlighted (APP green, KNOB orange, IK blue) and named in
+text. On hardware, mode/motion controls stay disabled until startup initialization
+is acknowledged. STOP and Reload calibration stay available; simulation still
+opens ready in IK mode. Controls are disabled during a move or pending STOP.
+
+STOP immediately cancels Python's future waypoints, then sends a software stop
+before redrawing. Arduino freezes its command ramp when it processes the command;
+servos remain powered to hold the last commanded positions. It is not a guaranteed
+instantaneous emergency stop: serial delay and mechanical settling still apply.
+The GUI waits for STOPPED and the next position report before unlocking controls.
+In KNOB mode it exits to APP, and knob takeover cannot restart motion after a user
+STOP until another explicit mode/motion action. The old IK plan is discarded.

@@ -1,5 +1,26 @@
 # Python GUI integration validation
 
+## Active mode, hardware startup lock and acknowledged STOP (latest)
+
+APP/KNOB/IK buttons now use their green/orange/blue colors and a sunken/bold
+selected style, with a text mode/moving/stopped status. Hardware controls stay
+disabled until startup OK. STOP and Reload calibration remain available. Controls
+are also locked during motion or while STOP is awaiting acknowledgement and the
+following position report. Arduino MODE replies update the displayed mode.
+
+STOP cancels the Python queue, sends the stop before redrawing, and preserves
+servo power. It exits KNOB mode first and suppresses automatic knob takeover
+after a user stop. Intentional knob takeover during IK waits for stop confirmation
+before entering KNOB mode. No Arduino firmware change was needed.
+
+44 noninteractive GUI/adapter tests passed; 2 native-window tests were skipped.
+Six new checks cover hardware locks until initialization OK, mode styling and
+mode-specific controls, queue cancellation and emulator freeze, STOPPED plus
+position-report gating, reset relocking, knob-mode exit and deliberate takeover.
+Source compiles. Native window appearance and physical stop latency were not
+measured; no physical hardware was commanded. This is a software command stop,
+not a power-off or guaranteed instantaneous emergency stop.
+
 ## Direct IK preview on simulation startup (latest)
 
 Only the emulator handles READY by preparing its upright reference automatically,
