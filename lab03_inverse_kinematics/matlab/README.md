@@ -99,6 +99,17 @@ prevent simulation. `m.label` is descriptive metadata.
 
 ### Frame placement behind the table
 
+![Hiwonder miniArm with Craig modified-DH frames, including frame 1 directly on the arm](images/miniarm_craig_dh_frames.png)
+
+*Frame illustration at q = [90, 60, -60, -60] degrees. Red, green and blue
+indicate x, y and z. Frames {1} and {2} are both drawn at the same shoulder
+origin; the inset separates their axes for clarity. Frame {0} has x right,
+y forward and z up, viewed from behind at the Arduino/knobs. Hardware is
+schematic; frame origins and directions follow the lab's DH model.*
+
+[Download the full-resolution illustration](images/miniarm_craig_dh_frames.png)
+
+
 Craig modified DH assigns the rotation of joint i to **z_i**. Frame {1} is at
 shoulder height on the vertical base axis; frame {2} has the same origin and a
 horizontal shoulder axis. Frame {3} is at the elbow; frame {4} is at the wrist.

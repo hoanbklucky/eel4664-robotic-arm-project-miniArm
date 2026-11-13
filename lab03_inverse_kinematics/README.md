@@ -7,6 +7,9 @@
 > the older GUI, not the current XYZ interface.
 # Lab 03 — Craig DH, Jacobian and Numerical Position IK
 
+**Robot frames:** [Annotated miniArm illustration](matlab/README.md#frame-placement-behind-the-table),
+including frame {1} directly on the arm and the shared shoulder origin.
+
 **New to the code? Read the [MATLAB file-by-file guide](matlab/README.md)** for
 the role of all nine `.m` files, DH frames, transformation matrices, FK,
 Jacobian methods, numerical IK, collision checks and runnable inspection commands.
