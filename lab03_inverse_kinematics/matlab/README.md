@@ -180,6 +180,10 @@ expected. Lines joining these points are kinematic representations, not CAD.
 
 ## 6. Where the Jacobian is calculated
 
+For an annotated explanation of the two loops, the derivative matrix D, all
+four Jacobian-column products and a numerical check, read the
+[partial-derivative walkthrough](JACOBIAN_WALKTHROUGH.md).
+
 **Method:** `MiniArmIK.jacobian(m,q,method,h)` in `MiniArmIK.m`.
 
 The position Jacobian has 3 rows (x,y,z) and 4 columns (base, shoulder, elbow,

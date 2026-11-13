@@ -5,6 +5,8 @@ the role of all nine `.m` files, DH frames, transformation matrices, FK,
 Jacobian methods, numerical IK, collision checks and runnable inspection commands.
 The guide also traces [what happens when demo_ik runs](matlab/README.md#execution-flow-when-you-type-demo_ik),
 including the candidate joint update, conditional acceptance and next iteration.
+For the mathematics behind the Jacobian loop, see the
+[worked partial-derivative explanation](matlab/JACOBIAN_WALKTHROUGH.md).
 
 **Start with MATLAB.** This lab implements your own forward kinematics, two
 position Jacobians and damped numerical IK, then animates the result. The core

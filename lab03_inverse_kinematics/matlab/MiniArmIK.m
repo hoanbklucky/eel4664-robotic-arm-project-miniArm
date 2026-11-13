@@ -18,10 +18,17 @@ function validate(m)
 end
 function [A,D] = mdh(row,q)
     % Rx(alpha) Tx(a) Rz(thetaOffset+q) Tz(d), Craig convention.
+    % This row describes ONE independent revolute joint. a, alpha, d and
+    % thetaOffset are constants; only theta = thetaOffset + q changes.
     a=row(1); al=row(2); d=row(3); t=row(4)+q;
     c=cos(t); s=sin(t); ca=cos(al); sa=sin(al);
     A=[c -s 0 a; s*ca c*ca -sa -d*sa; s*sa c*sa ca d*ca; 0 0 0 1];
-    % Exact partial derivative dA/dq; no Symbolic Math Toolbox needed.
+    % D = partial A / partial q, evaluated at this joint's current q.
+    % Since q is in RADIANS: d(cos(theta))/dq = -sin(theta),
+    % d(sin(theta))/dq = cos(theta), and d(thetaOffset+q)/dq = 1.
+    % Constant entries differentiate to zero. No symbolic toolbox is needed:
+    % the derivative formula was derived once and is evaluated numerically.
+    % D is a derivative matrix, NOT a homogeneous pose (its bottom row is 0).
     D=[-s -c 0 0; c*ca -s*ca 0 0; c*sa -s*sa 0 0; 0 0 0 0];
 end
 function [p,T,P] = fk(m,q)
@@ -34,6 +41,8 @@ function [p,T,P] = fk(m,q)
     T=T*m.tool; p=T(1:3,4); P(:,end)=p;
 end
 function J = jacobian(m,q,method,h)
+    % J(:,j) = partial TCP position / partial q(j), in metres/radian.
+    % Rows: x,y,z. Columns: base, shoulder, elbow, wrist for this miniArm.
     if nargin<3, method='partial'; end
     if nargin<4, h=1e-5; end
     q=q(:); n=numel(q); J=zeros(3,n);
@@ -41,18 +50,38 @@ function J = jacobian(m,q,method,h)
     if strcmp(method,'finite')
         assert(isscalar(h) && isfinite(h) && h>0, 'h must be positive');
         for j=1:n
+            % Perturb ONLY joint j. FK's first output is TCP position.
             dq=zeros(n,1); dq(j)=h;
             J(:,j)=(MiniArmIK.fk(m,q+dq)-MiniArmIK.fk(m,q-dq))/(2*h);
         end
     elseif strcmp(method,'partial')
-        % Product rule: base*A1*...*D_j*...*An*tool.
+        % FK: T = base*A1(q1)*...*An(qn)*tool; p = T(1:3,4).
+        % Holding every joint except q(j) fixed, ONLY A_j depends on q(j).
+        % Thus partial T/partial q(j) = base*A1*...*D_j*...*An*tool.
+        % There is one such product per column, not a sum over all joints.
         for j=1:n
+            % OUTER loop: choose which joint variable to differentiate.
+            % Example j=2: build base*A1*D2*A3*A4*tool for column 2.
+            % dT is a product accumulator; m.base itself is NOT differentiated.
             dT=m.base;
             for i=1:n
+                % INNER loop: visit each factor A_i in the FK chain.
+                % A is the usual transform; D is its derivative w.r.t q(i).
                 [A,D]=MiniArmIK.mdh(m.mdh(i,:),q(i));
-                if i==j, dT=dT*D; else, dT=dT*A; end
+                if i==j
+                    % This factor depends on the joint being differentiated.
+                    dT=dT*D;
+                else
+                    % This factor is constant w.r.t q(j); retain it unchanged.
+                    dT=dT*A;
+                end
             end
-            dT=dT*m.tool; J(:,j)=dT(1:3,4);
+            % Retain the fixed tool transform: rotating a joint moves the TCP
+            % through this offset too, even though tool has no joint variable.
+            dT=dT*m.tool;
+            % The derivative of position is column 4, rows 1:3 of partial T.
+            % This fills ONE column: [dx/dq(j); dy/dq(j); dz/dq(j)].
+            J(:,j)=dT(1:3,4);
         end
     else
         error('Use partial or finite');
