@@ -18,8 +18,11 @@ New tests cover mode-panel visibility/value retention and pane-space allocation.
 Native Tk checks create actual windows at 1100x720, 1366x768 and 1900x1040 with
 normal and 150% font scaling, switch all modes, and assert usable canvas bounds
 and rendered arm links instead of the enlarge-window message. The Windows CI
-workflow runs these and the existing suites. Local execution was unavailable in
-the current session; use the linked commit's CI results for execution evidence.
+workflow runs these and the existing suites. Local desktop execution was unavailable
+in the current session, but the [Windows CI run](https://github.com/hoanbklucky/eel4664-robotic-arm-project-miniArm/actions/runs/43545674591)
+passed: **78 tests (16 core + 62 GUI/adapter/firmware), no skips**. This includes
+the native Tk size/scaling regression, original live preview/execution checks,
+and the actual-sketch host C++ harness. No physical robot was connected.
 GUI is v2.0.1; firmware/emulator protocol remains v2.0.0. No firmware upload or
 recalibration is needed for this GUI layout patch.
 
