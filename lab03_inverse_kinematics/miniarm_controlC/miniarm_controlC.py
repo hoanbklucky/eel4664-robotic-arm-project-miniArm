@@ -693,6 +693,11 @@ class ArmApp:
 
     def poll(self):
         if getattr(self,'_closing',False):return
+        # Manual/test refreshes must not accumulate extra scheduled poll loops.
+        timer=getattr(self,'_poll_id',None);self._poll_id=None
+        if timer is not None and hasattr(self.root,'after_cancel'):
+            try:self.root.after_cancel(timer)
+            except tk.TclError:pass
         if self.link: self.link.tick()
         while not self.inbox.empty():
             line=self.inbox.get(); parts=line.split()
