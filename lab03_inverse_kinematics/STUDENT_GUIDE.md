@@ -304,6 +304,13 @@ required for this lab.
 
 ### Mode indication and initialization controls
 
+In GUI v2.0.1, only the active mode's inputs are shown: APP has manual sliders,
+IK has XYZ inputs, and KNOB has neither. Slider values and XYZ entries are retained
+when hidden. The preview has reserved space beneath the resizable divider; if
+inputs overflow, scroll the upper input pane rather than enlarging the whole
+window. The command log is a separate tab beside 3D preview & convergence.
+This GUI-only update uses firmware 2.0.0; no new firmware upload is needed.
+
 The selected mode button is colored and pressed in: APP green, KNOB orange,
 IK blue. The text status also identifies the active mode and whether movement
 is active, STOP is pending, or commands are stopped. On real hardware, mode

@@ -141,3 +141,16 @@ The calibration window shows unsaved edits, a Check/Save summary and a selectabl
 file path. It asks before closing or reloading would discard unsaved measurements;
 a failed validation/save keeps the window and entries intact. It is resizable,
 with the diagnostic area expanding. Saving still writes DH joint-angle mode.
+
+## Preview layout fix — GUI v2.0.1
+
+Manual sliders appear only in APP; XYZ/Calculate/Move appear only in IK. KNOB
+hides both input sections. Inputs are retained when changing mode. The preview
+owns protected space in a resizable lower pane. Overflowing inputs scroll above
+it, and Command log has its own tab so it cannot squeeze the drawing. Drag the
+horizontal divider to adjust the split. Mode changes do not move the arm.
+
+Update the Python files together (including miniarm_version.py). Firmware stays
+at 2.0.0 and the calibration file is unchanged; this fix requires no new Arduino
+upload. Windows layout checks cover 1100x720, 1366x768 and 1900x1040 at normal
+and 150% font scaling in APP, KNOB and IK modes.

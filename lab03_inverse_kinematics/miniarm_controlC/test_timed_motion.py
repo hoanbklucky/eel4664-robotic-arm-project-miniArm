@@ -11,7 +11,7 @@ import numpy as np
 import miniarm_controlC as gui
 import miniarm_ik as ik
 import miniarm_calibration as mc
-from miniarm_version import APP_VERSION,DEVELOPER
+from miniarm_version import APP_VERSION,DEVELOPER,FIRMWARE_VERSION
 from test_controls import controls_app
 
 
@@ -88,9 +88,9 @@ class TimedMotionTests(unittest.TestCase):
         app.inbox.put('READY');app.poll();self.assertFalse(app.supports_timed_motion())
 
     def test_identity_matches_reported_firmware_version(self):
-        self.assertEqual(DEVELOPER,'Ngo Lab');self.assertEqual(APP_VERSION,'2.0.0')
+        self.assertEqual(DEVELOPER,'Ngo Lab');self.assertEqual(APP_VERSION,'2.0.1')
         sketch=(Path(__file__).parent/'miniarm_controlC/miniarm_controlC.ino').read_text()
-        self.assertIn('FW '+APP_VERSION+' TIMED',sketch)
+        self.assertIn('FW '+FIRMWARE_VERSION+' TIMED',sketch)
 
     @unittest.skipUnless(shutil.which('g++'),'Host C++ compiler unavailable')
     def test_actual_arduino_sketch_with_host_hardware_stubs(self):

@@ -36,10 +36,10 @@ import queue
 import threading
 import time
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import scrolledtext, ttk
 
 import miniarm_calibration as mc
-from miniarm_version import APP_VERSION, DEVELOPER
+from miniarm_version import APP_VERSION, DEVELOPER, FIRMWARE_VERSION
 
 try:
     import miniarm_ik as ik                 # needs numpy
@@ -177,7 +177,7 @@ class SimulatedArm:
 
     simulated = True
     supports_timed = True
-    firmware_version = APP_VERSION
+    firmware_version = FIRMWARE_VERSION
     ORDER = [BASE, ARM, FOREARM, WRIST, CLAW]
 
     def __init__(self, inbox):
@@ -336,7 +336,7 @@ class ArmApp:
         root.protocol('WM_DELETE_WINDOW',self.close)
 
     def _build(self):
-        bar=tk.Frame(self.root); bar.pack(fill='x',padx=10,pady=8)
+        bar=tk.Frame(self.root); bar.pack(fill='x',padx=10,pady=6)
         self.mode_buttons={}
         for mode in ('A','K','I'):
             button=tk.Button(bar,text=MODES[mode][0],command=lambda m=mode:self.set_mode(m))
@@ -345,74 +345,162 @@ class ArmApp:
         self.stop_button.pack(side='left',padx=6)
         self.reload_button=tk.Button(bar,text='Reload calibration',command=self.reload)
         self.reload_button.pack(side='left')
-        self.mode_status=tk.StringVar(value='Not initialized')
-        tk.Label(self.root,textvariable=self.mode_status,font=('Segoe UI',10,'bold')).pack()
         self.status=tk.StringVar()
-        self.connection_banner=tk.Label(self.root,textvariable=self.status,font=('Segoe UI',10,'bold'),padx=12,pady=7)
-        self.connection_banner.pack(fill='x',padx=10,pady=4)
+        self.connection_banner=tk.Label(self.root,textvariable=self.status,font=('Segoe UI',10,'bold'),padx=10,pady=5)
+        self.connection_banner.pack(fill='x',padx=10,pady=3)
+        meta=tk.Frame(self.root); meta.pack(fill='x',padx=12)
+        self.mode_status=tk.StringVar(value='Not initialized')
+        tk.Label(meta,textvariable=self.mode_status,font=('Segoe UI',9,'bold'),wraplength=460,justify='left').pack(side='left')
         self.version_info=tk.StringVar(value=f'v{APP_VERSION} | Developed by {DEVELOPER} | Firmware: waiting for connection')
-        tk.Label(self.root,textvariable=self.version_info,fg='#475569').pack()
-        setup=tk.Frame(self.root); setup.pack(fill='x',padx=12)
-        self.init_text=tk.StringVar(); tk.Label(setup,textvariable=self.init_text).pack(side='left')
+        tk.Label(meta,textvariable=self.version_info,fg='#475569',wraplength=440,justify='right').pack(side='right')
+        setup=tk.Frame(self.root); setup.pack(fill='x',padx=12,pady=4)
+        self.init_text=tk.StringVar()
+        tk.Label(setup,textvariable=self.init_text,wraplength=650,justify='left').pack(side='left')
         self.init_button=tk.Button(setup,command=self.initialize)
         self.init_button.pack(side='right')
         self.update_init_text()
-        panel=tk.LabelFrame(self.root,text='Manual servo commands — raw values, not DH joint angles',padx=12,pady=6)
-        panel.pack(padx=10,pady=6)
+
+        # The lower pane owns the preview's minimum height. Extra controls scroll
+        # inside their own pane; they can no longer squeeze the plot out of view.
+        self.main_panes=tk.PanedWindow(self.root,orient='vertical',sashwidth=6,
+                                      sashrelief='raised',showhandle=True)
+        self.main_panes.pack(fill='both',expand=True,padx=8,pady=(2,8))
+        controls=tk.Frame(self.main_panes)
+        self.controls_canvas=tk.Canvas(controls,height=230,highlightthickness=0)
+        self.controls_scrollbar=tk.Scrollbar(controls,orient='vertical',command=self.controls_canvas.yview)
+        self.controls_scrollbar.pack(side='right',fill='y')
+        self.controls_canvas.pack(side='left',fill='both',expand=True)
+        self.controls_canvas.config(yscrollcommand=self.controls_scrollbar.set)
+        self.controls_body=tk.Frame(self.controls_canvas)
+        self.controls_window=self.controls_canvas.create_window((0,0),window=self.controls_body,anchor='nw')
+        self.controls_body.columnconfigure(0,weight=1)
+        self.controls_canvas.bind('<Configure>',self.controls_resized)
+        self.controls_body.bind('<Configure>',self.controls_content_changed)
+
+        panel=tk.LabelFrame(self.controls_body,text='APP: manual servo commands — raw values, not DH angles',padx=10,pady=4)
+        self.manual_panel=panel
         self.sliders={}
         for col,j in enumerate(DISPLAY_ORDER):
             box=tk.Frame(panel); box.grid(row=0,column=col,padx=7)
             lo,hi=self.limit(j)
-            s=tk.Scale(box,from_=hi,to=lo,length=140,label=JOINT_NAMES[j])
-            s.set(90); s.pack(); self.sliders[j]=s
+            slider=tk.Scale(box,from_=hi,to=lo,length=120,label=JOINT_NAMES[j])
+            slider.set(90); slider.pack(); self.sliders[j]=slider
         self.manual_button=tk.Button(panel,text='Send manual sliders (APP mode)',command=self.manual)
         self.manual_button.grid(row=1,column=0,columnspan=5)
-        inp=tk.LabelFrame(self.root,text='IK target — XYZ in millimetres',padx=10,pady=6); inp.pack(pady=6)
+        panel.grid(row=0,column=0,padx=6,pady=4)
+
+        inp=tk.LabelFrame(self.controls_body,text='IK target — XYZ in millimetres',padx=10,pady=4)
+        self.ik_panel=inp; inp.grid(row=1,column=0,pady=4)
         self.entries=[]; self.target_values=[]
         for col,(name,value) in enumerate(zip(('X right (mm)','Y forward (mm)','Z up (mm)'),(-40,100,150))):
             tk.Label(inp,text=name).grid(row=0,column=col,padx=10)
             variable=tk.StringVar(value=str(value)); self.target_values.append(variable)
-            e=tk.Entry(inp,width=12,textvariable=variable); e.grid(row=1,column=col,padx=10)
+            entry=tk.Entry(inp,width=12,textvariable=variable); entry.grid(row=1,column=col,padx=10)
             variable.trace_add('write',lambda *args:self.invalidate())
-            e.bind('<Return>',lambda event:self.calculate()); self.entries.append(e)
-        timing=tk.Frame(self.root);timing.pack(pady=3)
+            entry.bind('<Return>',lambda event:self.calculate()); self.entries.append(entry)
+        timing=tk.Frame(self.controls_body); timing.grid(row=2,column=0,pady=3)
+        self.timing_panel=timing
         tk.Label(timing,text='Move time (s, minimum):').pack(side='left')
         self.move_seconds=tk.StringVar(value='2.0')
         self.duration_input=tk.Spinbox(timing,from_=0.5,to=15,increment=.5,textvariable=self.move_seconds,width=5)
         self.duration_input.pack(side='left',padx=6)
         tk.Label(timing,text='All joints move together; larger moves may take longer.').pack(side='left')
-        actions=tk.Frame(self.root); actions.pack()
-        self.calculate_button=tk.Button(actions,text='Calculate / Preview',command=self.calculate)
+        actions=tk.Frame(self.controls_body); actions.grid(row=3,column=0,pady=3)
+        self.ik_actions=tk.Frame(actions); self.ik_actions.grid(row=0,column=0)
+        self.calculate_button=tk.Button(self.ik_actions,text='Calculate / Preview',command=self.calculate)
         self.calculate_button.pack(side='left',padx=4)
-        self.move_button=tk.Button(actions,text='Move Arm',state='disabled',command=self.move)
+        self.move_button=tk.Button(self.ik_actions,text='Move Arm',state='disabled',command=self.move)
         self.move_button.pack(side='left',padx=4)
+        self.claw_actions=tk.Frame(actions); self.claw_actions.grid(row=0,column=1)
         self.grip_buttons=[]
         for text,closed in [('Open claw',False),('Close claw',True)]:
-            button=tk.Button(actions,text=text,command=lambda c=closed:self.grip(c))
+            button=tk.Button(self.claw_actions,text=text,command=lambda c=closed:self.grip(c))
             button.pack(side='left',padx=4); self.grip_buttons.append(button)
         self.save_button=tk.Button(actions,text='Save experiment log',command=self.save_log)
-        self.save_button.pack(side='left',padx=4)
+        self.save_button.grid(row=0,column=2,padx=4)
         self.action_hint=tk.StringVar()
-        tk.Label(self.root,textvariable=self.action_hint,wraplength=1000,justify='left',fg='#475569').pack(padx=12,pady=(5,0))
+        self.hint_label=tk.Label(self.controls_body,textvariable=self.action_hint,wraplength=950,justify='left',fg='#475569')
+        self.hint_label.grid(row=4,column=0,padx=12,pady=(3,0))
         self.result_status=tk.StringVar(value='No IK preview calculated.')
-        self.result_label=tk.Label(self.root,textvariable=self.result_status,wraplength=1000,justify='left',font=('Segoe UI',9,'bold'))
-        self.result_label.pack(padx=12,pady=(3,0))
+        self.result_label=tk.Label(self.controls_body,textvariable=self.result_status,wraplength=950,justify='left',font=('Segoe UI',9,'bold'))
+        self.result_label.grid(row=5,column=0,padx=12,pady=(3,4))
+
+        # The log is a separate tab, not another tall row below the plot.
+        self.preview_tabs=ttk.Notebook(self.main_panes)
+        self.preview_page=tk.Frame(self.preview_tabs); log_page=tk.Frame(self.preview_tabs)
+        self.preview_tabs.add(self.preview_page,text='3D preview & convergence')
+        self.preview_tabs.add(log_page,text='Command log')
         self.readout=tk.StringVar(value='Position estimate: not initialized')
-        tk.Label(self.root,textvariable=self.readout,font=('Consolas',9)).pack(pady=5)
-        views=tk.Frame(self.root); views.pack(fill='x',padx=12)
+        self.readout_label=tk.Label(self.preview_page,textvariable=self.readout,font=('Consolas',9),wraplength=1000)
+        self.readout_label.pack(fill='x',padx=10,pady=3)
+        views=tk.Frame(self.preview_page); views.pack(fill='x',padx=10)
         tk.Label(views,text='Preview camera:').pack(side='left')
         self.preview_view=tk.StringVar(value='Rear right (Arduino side)')
         tk.OptionMenu(views,self.preview_view,*PREVIEW_CAMERAS,
                       command=lambda _:self.redraw_preview()).pack(side='left')
-        tk.Label(views,text='Changing the camera does not move the arm.').pack(side='left',padx=10)
-        self.canvas=tk.Canvas(self.root,width=840,height=340,bg='white')
-        self.canvas.pack(padx=10,fill='both',expand=True)
+        tk.Label(views,text='Camera only; does not move the arm.').pack(side='left',padx=8)
+        self.canvas=tk.Canvas(self.preview_page,width=840,height=340,bg='white',highlightthickness=0)
+        self.canvas.pack(fill='both',expand=True,padx=4,pady=4)
         self.canvas.bind('<Configure>',lambda _:self.redraw_preview())
-        self.terminal=scrolledtext.ScrolledText(self.root,width=100,height=5,state='disabled',font=('Consolas',9))
-        self.terminal.pack(padx=10,pady=8)
-        self.draw()
-        self.refresh_controls()
+        self.terminal=scrolledtext.ScrolledText(log_page,width=100,height=5,state='disabled',font=('Consolas',9))
+        self.terminal.pack(fill='both',expand=True)
+        self.main_panes.add(controls,minsize=55,height=230,stretch='never')
+        self.main_panes.add(self.preview_tabs,minsize=280,stretch='always')
+        self.controls_shell=controls; self._layout_mode=None; self._pane_fit=None
+        self.main_panes.bind('<Configure>',lambda _:self.queue_pane_fit())
+        screen_w=self.root.winfo_screenwidth(); screen_h=self.root.winfo_screenheight()
+        self.root.geometry(f'{min(1200,max(960,screen_w-80))}x{min(880,max(640,screen_h-100))}')
+        self.root.minsize(960,600)
+        self.draw(); self.refresh_controls()
         self.move_seconds.trace_add('write',lambda *args:self.invalidate())
+        self.root.after_idle(self.fit_preview_pane)
+
+    def controls_resized(self,event):
+        self.controls_canvas.itemconfigure(self.controls_window,width=event.width)
+        for label in (self.hint_label,self.result_label):
+            label.config(wraplength=max(280,event.width-36))
+        self.readout_label.config(wraplength=max(300,event.width-36))
+        self.controls_canvas.configure(scrollregion=self.controls_canvas.bbox('all'))
+        self.queue_pane_fit()
+
+    def controls_content_changed(self,event=None):
+        self.controls_canvas.configure(scrollregion=self.controls_canvas.bbox('all'))
+        self.queue_pane_fit()
+
+    def queue_pane_fit(self):
+        if getattr(self,'_fit_queued',False): return
+        self._fit_queued=True
+        self.root.after_idle(self.fit_preview_pane)
+
+    def fit_preview_pane(self):
+        self._fit_queued=False
+        if not hasattr(self,'preview_tabs'):return
+        height=self.main_panes.winfo_height()
+        if height<=1:return
+        overhead=max(60,self.preview_tabs.winfo_reqheight()-self.canvas.winfo_reqheight())
+        reserve=min(overhead+210,max(120,height-55))
+        wanted=self.controls_body.winfo_reqheight()+8
+        control_height=min(wanted,max(55,height-reserve-8))
+        key=(height,reserve,control_height,self.mode)
+        if key==self._pane_fit:return
+        self._pane_fit=key
+        self.main_panes.paneconfigure(self.preview_tabs,minsize=int(reserve))
+        self.main_panes.paneconfigure(self.controls_shell,height=int(control_height))
+        self.main_panes.sash_place(0,0,int(control_height))
+
+    def update_mode_panels(self):
+        if not hasattr(self,'manual_panel'):return
+        mode=self.mode
+        if mode!=self._layout_mode:
+            self._layout_mode=mode
+            for widget,visible in ((self.manual_panel,mode=='A'),(self.ik_panel,mode=='I'),
+                                   (self.timing_panel,mode!='K'),(self.ik_actions,mode=='I'),
+                                   (self.claw_actions,mode!='K')):
+                widget.grid() if visible else widget.grid_remove()
+            self.controls_canvas.yview_moveto(0)
+        show_result=mode=='I' or getattr(self,'feedback_kind','info')=='error'
+        self.result_label.grid() if show_result else self.result_label.grid_remove()
+        self.queue_pane_fit()
 
     def refresh_controls(self):
         """One place for mode highlighting and initialization/motion gating."""
@@ -447,6 +535,7 @@ class ArmApp:
                 suffix=' — STOPPED (servos holding)' if getattr(self,'stopped',False) else (' — moving' if self.busy else '')
                 text='Active mode: '+MODES[self.mode][0]+suffix
             self.mode_status.set(text)
+        self.update_mode_panels()
         if hasattr(self,'action_hint'):
             if waiting: hint='Waiting for STOP confirmation and the command-position report.'
             elif not self.ready: hint='Connect the Arduino, or launch with --simulate for offline work.'
@@ -473,6 +562,7 @@ class ArmApp:
         if hasattr(self,'result_status'): self.result_status.set(message)
         if hasattr(self,'result_label'):
             self.result_label.config(fg={'info':'#475569','success':'#15803d','error':'#b91c1c'}[kind])
+        self.update_mode_panels()
 
     def log(self,text):
         self.terminal.config(state='normal'); self.terminal.insert('end',text+'\n')

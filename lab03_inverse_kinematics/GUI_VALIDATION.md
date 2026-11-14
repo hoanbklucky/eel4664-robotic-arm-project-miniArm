@@ -1,5 +1,28 @@
 # Python GUI integration validation
 
+## GUI v2.0.1: preview remains visible and irrelevant inputs are hidden
+
+The root cause was packing every mode's controls and the log above/below a
+single expandable Canvas. At Windows scaling, the fixed rows consumed the window
+height, leaving the canvas below the 180-pixel rendering guard. Maximizing alone
+could not fix the oversized fixed content.
+
+APP now shows sliders, IK shows XYZ/timed-preview inputs, and KNOB shows neither.
+Mode changes hide widgets without destroying their values. Header information is
+more compact. A vertical PanedWindow reserves preview space; excessive controls
+scroll separately. The command log is a second Notebook tab rather than another
+fixed row stealing preview height. Current-position information stays with the
+preview. The renderer, IK/calibration and firmware motion protocol are unchanged.
+
+New tests cover mode-panel visibility/value retention and pane-space allocation.
+Native Tk checks create actual windows at 1100x720, 1366x768 and 1900x1040 with
+normal and 150% font scaling, switch all modes, and assert usable canvas bounds
+and rendered arm links instead of the enlarge-window message. The Windows CI
+workflow runs these and the existing suites. Local execution was unavailable in
+the current session; use the linked commit's CI results for execution evidence.
+GUI is v2.0.1; firmware/emulator protocol remains v2.0.0. No firmware upload or
+recalibration is needed for this GUI layout patch.
+
 ## v2.0.0: visible identity and one final timed move (latest)
 
 A prominent colored banner distinguishes simulation (no physical movement) from
