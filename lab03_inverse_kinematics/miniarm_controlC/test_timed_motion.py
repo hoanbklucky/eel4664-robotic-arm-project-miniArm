@@ -88,7 +88,7 @@ class TimedMotionTests(unittest.TestCase):
         app.inbox.put('READY');app.poll();self.assertFalse(app.supports_timed_motion())
 
     def test_identity_matches_reported_firmware_version(self):
-        self.assertEqual(DEVELOPER,'Ngo Lab');self.assertEqual(APP_VERSION,'2.0.1')
+        self.assertEqual(DEVELOPER,'Ngo Lab');self.assertEqual(APP_VERSION,'2.0.2')
         sketch=(Path(__file__).parent/'miniarm_controlC/miniarm_controlC.ino').read_text()
         self.assertIn('FW '+FIRMWARE_VERSION+' TIMED',sketch)
 

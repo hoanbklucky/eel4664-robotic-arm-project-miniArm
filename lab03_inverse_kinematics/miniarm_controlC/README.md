@@ -154,3 +154,13 @@ Update the Python files together (including miniarm_version.py). Firmware stays
 at 2.0.0 and the calibration file is unchanged; this fix requires no new Arduino
 upload. Windows layout checks cover 1100x720, 1366x768 and 1900x1040 at normal
 and 150% font scaling in APP, KNOB and IK modes.
+
+## Stable preview — GUI v2.0.2
+
+The executable motion plan and displayed calculation are separate. Input edits,
+STOP and new position reports may invalidate a move, but do not erase the last
+purple pose, red target or solver curve. Only Calculate / Preview replaces that
+calculation. During physical movement, gray follows reported commands; purple
+stays at the last calculated pose. Stable workspace bounds prevent live reports
+from re-zooming the plot. Reset and calibration reload explicitly clear old display
+state. Firmware remains 2.0.0; this fix requires no Arduino upload or recalibration.

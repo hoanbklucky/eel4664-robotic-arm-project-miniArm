@@ -102,6 +102,23 @@ def fit_preview_projection(points,view,viewport):
     return project
 
 
+def preview_workspace_points(m,target=None):
+    """Stable workspace bounds, independent of live servo reports or unsent inputs.
+
+    The first MDH origin is the shoulder centre. All subsequent links/tool fit
+    inside this conservative sphere; use its bounding box for a steady scale.
+    """
+    shoulder=ik.fk(m,np.zeros(len(m.mdh)))[1][1]*1000
+    reach=1000*(np.sum(np.abs(m.mdh[1:,0]))+np.sum(np.abs(m.mdh[1:,2]))+
+                np.linalg.norm(m.tool[:3,3]))
+    reach=max(float(reach),70.)
+    points=[shoulder+reach*np.array([x,y,z])
+            for x in (-1,1) for y in (-1,1) for z in (-1,1)]
+    points.extend([np.zeros(3),*list(np.eye(3)*70.)])
+    if target is not None:points.append(np.asarray(target,dtype=float))
+    return np.asarray(points)
+
+
 def calibration_path():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), CALIBRATION_FILE)
 
@@ -600,11 +617,14 @@ class ArmApp:
         if not self.ready or not self.link: raise ValueError('Arduino is not ready')
         self.link.send(line)
 
-    def invalidate(self):
+    def invalidate(self,clear_display=False):
+        """Invalidate executable motion without erasing the last calculation."""
         self.preview=None; self.move_button.config(state='disabled')
-        self.feedback('Preview cleared — calculate again before Move Arm.')
-        self._preview_plot=None
-        if hasattr(self,'canvas'): self.draw()
+        if clear_display:self._preview_plot=None
+        retained=getattr(self,'_preview_plot',None) is not None
+        message='Last calculated preview retained — calculate again before Move Arm.' if retained else 'Calculate / Preview prepares a move; editing inputs does not move the arm.'
+        self.feedback(message if self.mode=='I' else '')
+        if hasattr(self,'canvas'):self.redraw_preview()
         self.refresh_controls()
 
     def set_mode(self,mode):
@@ -691,7 +711,7 @@ class ArmApp:
                         suffix=self.firmware_version if self.timed_supported else 'unknown/older — upload v2.0.0 for smooth IK'
                         self.version_info.set(f'v{APP_VERSION} | Developed by {DEVELOPER} | Firmware: {suffix}')
                 self.stopped=False; self.stop_pending=False; self.stop_acknowledged=False; self.knob_takeover_pending=False
-                self.plan=[]; self.pending=None; self.invalidate()
+                self.plan=[]; self.pending=None; self.invalidate(clear_display=True)
                 if getattr(self.link,'simulated',False):
                     self.firmware_version=self.link.firmware_version
                     if hasattr(self,'version_info'):self.version_info.set(f'v{APP_VERSION} | Developed by {DEVELOPER} | Emulator {self.firmware_version}')
@@ -768,8 +788,7 @@ class ArmApp:
                 ' | base/shoulder/elbow/wrist deg: '+np.array2string(np.rad2deg(q),precision=1,suppress_small=True))
         else: self.readout.set('Raw S1..S5: '+str(self.positions)+' | calibration needed for XYZ')
         if self.preview and self.positions!=self.preview['start']: self.invalidate()
-        if self.preview: self.redraw_preview()
-        else: self.draw()
+        self.redraw_preview()  # live gray arm may update; the purple calculation is retained
 
     def calculate(self):
         if self.busy or getattr(self,'stop_pending',False): self.log('Wait for motion/STOP confirmation first.'); return
@@ -839,7 +858,7 @@ class ArmApp:
         try:
             cal=mc.Calibration.load(calibration_path()); m=ik.model(GEOMETRY,cal)
             self.cal=cal; self.m=m; self.synthetic=False
-            self.invalidate(); self.initialized=False; self.update_init_text()
+            self.initialized=False; self.invalidate(clear_display=True); self.update_init_text()
             for j,s in self.sliders.items():
                 lo,hi=self.limit(j); s.config(from_=hi,to=lo)
             if getattr(self.link,'simulated',False):
@@ -875,8 +894,7 @@ class ArmApp:
             return
         view=self.preview_view.get()
         axes=np.eye(3)*70.
-        fit_points=np.vstack((current,P,[[0,0,0]],axes))
-        if target is not None: fit_points=np.vstack((fit_points,target))
+        fit_points=preview_workspace_points(self.m,target)
         xy=fit_points[:,:2]
         low=xy.min(axis=0)-12; high=xy.max(axis=0)+12
         floor=np.array([[low[0],low[1],0],[high[0],low[1],0],

@@ -1,5 +1,22 @@
 # Python GUI integration validation
 
+## GUI v2.0.2: stable calculated preview
+
+The displayed calculation is now independent of the executable move plan.
+Invalidating stale inputs/start state disables Move but retains the purple pose,
+red marker and solver curve. Position reports update the gray current estimate
+without clearing the drawing. The renderer uses fixed conservative workspace
+bounds plus the last calculated target rather than re-fitting to each live pose.
+Reset/calibration reload explicitly clear the drawing; camera/resize just redraw.
+
+Regression checks cover input edits, a new calculation, live reports, in-progress
+movement, STOP/reset and fixed projection bounds. Existing Windows native layout,
+preview, calibration and firmware checks remain in the automated workflow. The
+same behavior fix was applied to the instructor's uploaded customized controller
+while preserving its layout, pending-slider controls and retry solver. Firmware
+protocol and calibration are unchanged. No physical robot was commanded during
+this verification.
+
 ## GUI v2.0.1: preview remains visible and irrelevant inputs are hidden
 
 The root cause was packing every mode's controls and the log above/below a

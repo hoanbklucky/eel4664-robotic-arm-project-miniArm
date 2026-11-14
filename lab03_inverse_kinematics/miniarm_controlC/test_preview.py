@@ -121,7 +121,7 @@ class PreviewGuiTests(unittest.TestCase):
                 np.testing.assert_array_equal(app.preview['q'],q)
                 self.assertEqual(app.positions,before);self.assertFalse(app.busy)
                 self.assertEqual(len(app.canvas.find_withtag('target_marker')),2)
-            app.invalidate()
+            app.invalidate(clear_display=True)
             self.assertIsNone(app._preview_plot)
             self.assertEqual(len(app.canvas.find_withtag('target_marker')),0)
         finally:app.close()
