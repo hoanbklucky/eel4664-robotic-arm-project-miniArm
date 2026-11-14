@@ -453,7 +453,7 @@ class ArmApp:
         self.root.minsize(960,600)
         self.draw(); self.refresh_controls()
         self.move_seconds.trace_add('write',lambda *args:self.invalidate())
-        self.root.after_idle(self.fit_preview_pane)
+        self.queue_pane_fit()
 
     def controls_resized(self,event):
         self.controls_canvas.itemconfigure(self.controls_window,width=event.width)
@@ -468,13 +468,13 @@ class ArmApp:
         self.queue_pane_fit()
 
     def queue_pane_fit(self):
-        if getattr(self,'_fit_queued',False): return
+        if getattr(self,'_closing',False) or getattr(self,'_fit_queued',False): return
         self._fit_queued=True
-        self.root.after_idle(self.fit_preview_pane)
+        self._fit_id=self.root.after_idle(self.fit_preview_pane)
 
     def fit_preview_pane(self):
-        self._fit_queued=False
-        if not hasattr(self,'preview_tabs'):return
+        self._fit_queued=False; self._fit_id=None
+        if getattr(self,'_closing',False) or not hasattr(self,'preview_tabs'):return
         height=self.main_panes.winfo_height()
         if height<=1:return
         overhead=max(60,self.preview_tabs.winfo_reqheight()-self.canvas.winfo_reqheight())
@@ -672,6 +672,7 @@ class ArmApp:
         self.send(prefix+' '+' '.join(f'{float(v):.6g}' for v in self.pending))
 
     def poll(self):
+        if getattr(self,'_closing',False):return
         if self.link: self.link.tick()
         while not self.inbox.empty():
             line=self.inbox.get(); parts=line.split()
@@ -733,7 +734,7 @@ class ArmApp:
             self.stop(); self.log('Move timed out. Check connection and pose before reinitializing.')
             self.initialized=False
         self.refresh_controls()
-        self.root.after(20,self.poll)
+        self._poll_id=self.root.after(20,self.poll)
 
     def fail(self,message):
         self.log(message); self.plan=[]; self.pending=None; self.busy=False; self.invalidate()
@@ -945,6 +946,13 @@ class ArmApp:
             self.log('Log saved: '+path)
 
     def close(self):
+        self._closing=True
+        for name in ('_poll_id','_fit_id'):
+            callback=getattr(self,name,None)
+            if callback is not None:
+                try:self.root.after_cancel(callback)
+                except tk.TclError:pass
+                setattr(self,name,None)
         self.stop()
         if self.link: self.link.close()
         self.root.destroy()

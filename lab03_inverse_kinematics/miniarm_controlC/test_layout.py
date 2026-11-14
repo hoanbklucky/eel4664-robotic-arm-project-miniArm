@@ -1,6 +1,7 @@
 """Mode-specific controls and protected preview space on actual Tk windows."""
 import os
 import unittest
+from unittest.mock import Mock
 from types import SimpleNamespace
 import miniarm_controlC as gui
 
@@ -45,6 +46,17 @@ class ModePanelTests(unittest.TestCase):
         self.assertEqual(calls[1][1]['height'],292)
         self.assertLess(calls[1][1]['height'],700)  # controls scroll, not the plot
         count=len(calls);app.fit_preview_pane();self.assertEqual(len(calls),count)
+
+    def test_close_cancels_layout_and_poll_callbacks(self):
+        app=gui.ArmApp.__new__(gui.ArmApp)
+        app.root=SimpleNamespace(after_cancel=Mock(),destroy=Mock(),after_idle=Mock())
+        app.link=Mock();app.stop=Mock()
+        app._poll_id='poll-timer';app._fit_id='layout-idle'
+        app.close()
+        app.root.after_cancel.assert_any_call('poll-timer')
+        app.root.after_cancel.assert_any_call('layout-idle')
+        self.assertTrue(app._closing)
+        app.queue_pane_fit();app.root.after_idle.assert_not_called()
 
 
 @unittest.skipUnless(os.name=='nt' or os.environ.get('DISPLAY'),'Native Tk layout check needs a display')
