@@ -13,13 +13,26 @@ import miniarm_calibration as mc
 
 JOINTS = mc.JOINTS  # mathematical q order, NOT S1..S5 transmission order
 
+# Grip-point offset (GEOMETRY L3_OFFSET) handled as a fixed wrist tilt.
+# The grip point is L3 along the claw and L3_OFFSET to its top side, i.e. a
+# straight line of length hypot(L3, L3_OFFSET) tilted atan(L3_OFFSET/L3) above
+# the claw. The model therefore uses a straight tool of that length, and its
+# wrist angle q is the real wrist angle PLUS this tilt:
+#     model q_wrist = real q_wrist + WRIST_TILT
+# Only servo_to_q / q_to_servo (the servo boundary) convert; all kinematics,
+# IK, previews and collision checks work in model angles.
+WRIST_TILT = 0.0   # radians; set by model()
+
 def model(geometry, calibration=None):
     """Match miniarm_model.m; replace dimensions and limits with measurements."""
+    global WRIST_TILT
     m = source_model()
     m.mdh[0,2] = geometry['H']/1000
     m.mdh[2,0] = geometry['L1']/1000
     m.mdh[3,0] = geometry['L2']/1000
-    m.tool[0,3] = geometry['L3']/1000
+    offset = float(geometry.get('L3_OFFSET', 0.0))
+    m.tool[0,3] = float(np.hypot(geometry['L3'], offset))/1000
+    WRIST_TILT = float(np.arctan2(offset, geometry['L3']))
     if calibration:
         bounds = []
         for name in JOINTS:
@@ -32,17 +45,30 @@ def model(geometry, calibration=None):
                                     np.minimum(m.limits[:,1],calibrated[:,1])))
         if np.any(m.limits[:,0] >= m.limits[:,1]):
             raise ValueError('Calibration has no usable overlap with model joint limits; check angle references')
-        m.q0 = np.clip(m.q0,m.limits[:,0],m.limits[:,1])
+    m.limits[3] += WRIST_TILT   # real-angle wrist limits -> model angles
+    m.q0 = np.clip(m.q0,m.limits[:,0],m.limits[:,1])
     m.validate()
     return m
 
 def servo_to_q(cal, pose):
-    """S1..S5 -> [base,shoulder,elbow,wrist], radians."""
-    return np.deg2rad([cal.servo_to_q(name,pose[mc.SERVO_INDEX[name]])
-                      for name in JOINTS])
+    """S1..S5 -> [base,shoulder,elbow,wrist] model angles, radians."""
+    q = np.deg2rad([cal.servo_to_q(name,pose[mc.SERVO_INDEX[name]])
+                   for name in JOINTS])
+    q[3] += WRIST_TILT
+    return q
+
+def real_angles(q):
+    """Model angles -> real joint angles (what a protractor measures), radians."""
+    q = np.array(q, dtype=float); q[3] -= WRIST_TILT
+    return q
+
+def model_angles(q_real):
+    """Real joint angles -> model angles, radians."""
+    q = np.array(q_real, dtype=float); q[3] += WRIST_TILT
+    return q
 
 def q_to_servo(cal,q,claw):
-    deg=np.rad2deg(q)
+    deg=np.rad2deg(real_angles(q))
     pose=[float(claw),0,0,0,0]
     for name,value in zip(JOINTS,deg):
         pose[mc.SERVO_INDEX[name]]=cal.q_to_servo(name,value)
@@ -67,7 +93,22 @@ def inverse_kinematics(target_mm,m,q_start,method='partial'):
 
     Target XYZ is mm; q_start and returned q are radians. Inspect success/status.
     """
-    return solve(m,np.asarray(target_mm,dtype=float)/1000,q_start,method)
+    target=np.asarray(target_mm,dtype=float)/1000
+    q_start=np.asarray(q_start,dtype=float)
+    if WRIST_TILT and q_start.shape==(4,):
+        real=np.rad2deg(real_angles(q_start))
+        if abs(real[2])<3 and abs(real[3])<3:
+            # Real arm straight (e.g. upright): with the grip offset its grip point
+            # is beside the base axis, a poor first guess (the solver can fold
+            # backwards or spin the base). Search from the same pose with the
+            # claw tilted onto the arm line, then record the real start so the
+            # move is still planned and checked from where the arm actually is.
+            seed=q_start.copy(); seed[3]-=WRIST_TILT
+            seed=np.clip(seed,m.limits[:,0],m.limits[:,1])
+            q,r=solve(m,target,seed,method)
+            return q,dict(r,history=np.vstack([q_start,r['history']]),
+                          errors=np.r_[np.linalg.norm(target-position(m,q_start)),r['errors']])
+    return solve(m,target,q_start,method)
 
 def sequential_states(start,end):
     """Exact J setpoints, one raw unit/tick: base,arm,forearm,wrist,claw."""

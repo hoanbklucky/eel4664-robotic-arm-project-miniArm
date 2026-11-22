@@ -16,7 +16,11 @@ GEOMETRY = {
     "H": 120.0,   # table surface to the center of the arm (S4) shaft
     "L1": 56.5,   # arm axis to forearm axis
     "L2": 61.5,   # forearm axis to wrist axis
-    "L3": 85.0,   # wrist axis to the tool point (middle of the claw fingers)
+    "L3": 100.0,  # wrist axis to the grip point (middle of the claw fingers), along the claw
+    "L3_OFFSET": 10.0,  # grip point sideways from the claw line: + = claw's top side
+                        # (+Z when the claw points forward level). Handled as a fixed
+                        # wrist tilt of atan(L3_OFFSET/L3); upright stays fully
+                        # straight. 0 = original behaviour.
 }
 
 # --- Behaviour ---
@@ -32,6 +36,14 @@ RETRY_SEEDS = True         # if IK fails from the arm's current pose, retry from
 # --- Window ---
 WINDOW_SIZE = "1400x850"   # starting size; the window can be resized
 NUDGE = 15                 # APP CONTROL +/- buttons change a servo value by this much
+# --- Overshoot-and-return finish ---
+# After every smooth move, joints listed here step a little PAST their target
+# (continuing the direction they were moving) and then back. The servo then
+# makes a firm final correction instead of creeping to a stop inside its dead
+# zone short of the target. Set FINISH_OVERSHOOT to 0 to turn it off.
+FINISH_OVERSHOOT = 6       # raw servo units past the target
+FINISH_JOINTS = ("shoulder",)   # any of "base", "shoulder", "elbow", "wrist"
+FINISH_MIN_MOVE = 1        # skip joints that moved less than this many raw units
 AUTO_PREVIEW_MS = 0      # IK: recalculate the preview this long after you stop typing (0 = off)
 
 # =============================================================================
@@ -502,6 +514,10 @@ class ArmApp:
         self.inbox=queue.Queue(); self.link=None; self.ready=False
         self.mode='A'; self.positions=[90]*5; self.commanded=[90]*5
         self.initialized=False; self.busy=False; self.pending=None
+        # servos_on: the Arduino has switched the servos on (INIT/SINIT finished).
+        # It stays True after a calibration reload, an ERR or a timeout, which only
+        # make the GUI's pose uncertain; it resets only when the Arduino resets.
+        self.servos_on=False; self._recovering=False
         self.preview=None; self.plan=[]; self.active=None; self.started=0
         self._preview_plot=None
         self._app_target_pose=None
@@ -825,6 +841,8 @@ class ArmApp:
             elif not self.ready: hint=self.connection_state
             elif not self.initialized:
                 hint=('Initialization in progress; STOP cancels remaining servo enables.' if self.busy else
+                      f'Servos are still on. Click {self.init_button_name()} to return upright smoothly and re-enable the controls.'
+                      if getattr(self,'servos_on',False) else
                       f'Support the unloaded arm, then click {self.init_button_name()}. Servos enable one at a time; each may still move quickly.')
             elif self._pp_planning: hint='Planning all pick-and-place stages; no servo commands sent. STOP cancels planning.'
             elif self._pp_running: hint='Pick & Place: '+self._pp_current_label+'. STOP cancels the rest and keeps the current claw command.'
@@ -845,6 +863,7 @@ class ArmApp:
         # A new queue isolates late messages from the previous serial worker.
         self.inbox=queue.Queue()
         self.ready=False; self.initialized=False; self.pending=None; self.plan=[]
+        self.servos_on=False; self._recovering=False
         self.stop_pending=False; self.stop_acknowledged=False
         self.pending_firmware=None; self.firmware_version='unknown'; self.timed_supported=False
         self.sequential_supported=False
@@ -869,7 +888,7 @@ class ArmApp:
 
     def upright_button_text(self):
         if not self.cal: return 'Enable raw neutral (uncalibrated)'
-        return 'Slowly straighten upright' if self.initialized else 'Enable servos one by one'
+        return 'Slowly straighten upright' if (self.initialized or getattr(self,'servos_on',False)) else 'Enable servos one by one'
 
     def supports_timed_motion(self):
         return getattr(self,'timed_supported',False) or getattr(getattr(self,'link',None),'supports_timed',False)
@@ -908,7 +927,7 @@ class ArmApp:
         Never clip an unavailable upright pose into a different configuration.
         """
         if self.cal:
-            q=np.deg2rad([90.,90.,0.,0.])
+            q=ik.model_angles(np.deg2rad([90.,90.,0.,0.]))   # real upright, claw in line with the arm
             if np.any(q < self.m.limits[:,0]) or np.any(q > self.m.limits[:,1]):
                 raise ValueError('upright angles are outside calibrated limits')
             pose=ik.q_to_servo(self.cal,q,self.cal.claw_open)
@@ -919,7 +938,62 @@ class ArmApp:
 
     def send(self,line):
         if not self.ready or not self.link: raise ValueError('Arduino is not ready')
+        word=line.split()[0] if line.split() else ''
+        if word in ('T','M','J','INIT','SINIT'): self._last_command=word
+        if word=='T':   # remember where a smooth move started (for the finish)
+            self._finish_from=list(self.positions)
         self.link.send(line)
+
+    # -------------------------------------------------------------------------
+    # Overshoot-and-return finish (see FINISH_OVERSHOOT at the top)
+    # -------------------------------------------------------------------------
+    def finish_poses(self,start,target):
+        """[side pose, target] for the FINISH_JOINTS, or [] if nothing to do.
+
+        First choice: step PAST the target, then return. If that pose is not
+        clear (e.g. it would push the claw toward the table), back OFF the
+        same amount instead and return, which still ends with a firm step in
+        the original direction of travel.
+        """
+        if FINISH_OVERSHOOT<=0 or not self.cal: return []
+        names={'base':BASE,'shoulder':ARM,'elbow':FOREARM,'wrist':WRIST}
+        moved=[(name,names[name],float(target[names[name]])-float(start[names[name]]))
+               for name in FINISH_JOINTS
+               if abs(float(target[names[name]])-float(start[names[name]]))>=FINISH_MIN_MOVE]
+        if not moved: return []
+        reasons=[]
+        for side,label in ((1,'past'),(-1,'back-off')):
+            pose=list(target); changed=[]
+            for name,j,delta in moved:
+                lo,hi=self.limit(j)
+                value=min(max(float(target[j])+side*math.copysign(FINISH_OVERSHOOT,delta),lo),hi)
+                if abs(value-float(target[j]))>=1: pose[j]=value; changed.append(name)
+            if not changed: continue
+            try:   # both short legs must clear the table, base and arm
+                ik.validate_servo_leg(self.m,self.cal,list(target),pose)
+                ik.validate_servo_leg(self.m,self.cal,pose,list(target))
+            except ValueError as e:
+                reasons.append(f'{label}: {e}'); continue
+            if side<0: self.log(f'Finish: overshoot not clear here; backing off and returning ({", ".join(changed)}).')
+            return [pose,list(target)]
+        if reasons: self.log('Finish skipped: '+'; '.join(reasons))
+        return []
+
+    def continue_finish(self,completed):
+        """Called on each OK. Returns True while a finish step is in flight."""
+        steps=getattr(self,'_finish_steps',None)
+        if steps:
+            self.pending=steps.pop(0); self.started=time.monotonic()
+            self.send('M '+' '.join(f'{float(v):.6g}' for v in self.pending))
+            return True
+        start=getattr(self,'_finish_from',None); self._finish_from=None
+        if completed!='T' or start is None or self.stopped: return False
+        poses=self.finish_poses(start,self.positions)
+        if not poses: return False
+        self._finish_steps=poses[1:]
+        self.pending=poses[0]; self.started=time.monotonic()
+        self.send('M '+' '.join(f'{float(v):.6g}' for v in self.pending))
+        return True
 
     def invalidate(self,clear_display=False):
         """Invalidate motion without erasing the last calculated drawing."""
@@ -955,6 +1029,7 @@ class ArmApp:
 
     def initialize(self):
         if not self.ready or self.busy or getattr(self,'stop_pending',False): return
+        servos_on=getattr(self,'servos_on',False)
         if self.initialized and self.mode=='K':
             message='Choose APP or IK before an upright move; knob mode would move away from upright.'
             self.log(message); self.feedback(message); return
@@ -964,7 +1039,11 @@ class ArmApp:
                 self.log('Upright calibration conversion: '+', '.join(
                     f'{JOINT_NAMES[mc.SERVO_INDEX[name]]} q={q:g} deg -> S{mc.SERVO_INDEX[name]+1} raw {pose[mc.SERVO_INDEX[name]]}'
                     for name,q in zip(mc.JOINTS,[90,90,0,0])))
-            if self.initialized:
+            if self.initialized or servos_on:
+                # Servos already on (normal case, or after a calibration reload / ERR /
+                # timeout): the Arduino refuses SINIT, so return upright with a smooth
+                # timed move. Success re-initializes the GUI.
+                recovering=not self.initialized
                 pose[CLAW]=self.positions[CLAW]  # do not release a held object
                 if not self.supports_timed_motion():
                     raise ValueError('Gentle upright motion requires the v2.0.0 timed-motion firmware')
@@ -972,6 +1051,13 @@ class ArmApp:
                     ik.validate_coordinated_leg(self.m,self.cal,self.positions,pose)
                 duration=self.upright_duration(self.positions,pose)
                 self.invalidate()
+                if recovering:   # limits may have changed with a reloaded calibration
+                    limits=' '.join(f'{lo} {hi}' for lo,hi in (self.limit(j) for j in range(5)))
+                    self.send(f'CFG {limits} {STEP_MS} {SETTLE_MS}')
+                    if self.mode=='K':   # knobs would fight the upright move; MODE A also freezes the arm
+                        self.send('MODE A'); self.mode='A'
+                    self._recovering=True
+                    self.log('Servos are already on: straightening upright smoothly to re-initialize.')
                 self.log(f'Gentle upright return: {duration/1000:.2f} s; keeping '+MODES[self.mode][0]+'.')
                 if self.mode=='A':
                     self.capture_app_target(pose); self.redraw_preview()
@@ -1037,6 +1123,7 @@ class ArmApp:
                 self.log(self.connection_state)
             elif parts[0]=='LINK_ERROR':
                 self.ready=False; self.initialized=False; self._connecting=False
+                self.servos_on=False; self._recovering=False
                 self.busy=False; self.pending=None; self.plan=[]
                 self.stop_pending=False; self.stop_acknowledged=False
                 self.connection_state=line[len('LINK_ERROR '):]
@@ -1056,6 +1143,7 @@ class ArmApp:
                 self._connecting=False
                 self.connection_state='Connected; initialize the arm explicitly.'
                 self.ready=True; self.initialized=False; self.busy=False
+                self.servos_on=False; self._recovering=False     # an Arduino reset switches servos off
                 if not getattr(self.link,'simulated',False):
                     self.firmware_version,self.timed_supported,self.sequential_supported=getattr(self,'pending_firmware',None) or ('unknown',False,False)
                     self.pending_firmware=None
@@ -1097,9 +1185,13 @@ class ArmApp:
                 self.mode=parts[1]
             elif line=='OK' and self.pending is not None:
                 self.positions=list(self.pending); self.commanded=list(self.pending)
-                if self.active in ('INIT','SINIT'): self.initialized=True
+                if self.active in ('INIT','SINIT'): self.initialized=True; self.servos_on=True
+                elif self.active=='T' and getattr(self,'_recovering',False):
+                    self.initialized=True; self._recovering=False   # straightened upright again
+                completed=getattr(self,'_last_command','')
                 self.pending=None; self.update_position()
                 try:
+                    if self.continue_finish(completed): continue
                     if self.active=='PICKPLACE': self.pick_place_step_done()
                     else: self.next_waypoint()
                     if self.active=='INIT' and not self.busy and getattr(self.link,'simulated',False):
@@ -1129,7 +1221,8 @@ class ArmApp:
     def fail(self,message):
         self.cancel_pick_place()
         self.log(message); self.plan=[]; self.pending=None; self.busy=False; self.invalidate()
-        self.initialized=False; self.stop_pending=False
+        self.initialized=False; self.stop_pending=False; self._recovering=False
+        self._finish_steps=None; self._finish_from=None
         if self.ready and self.link:
             try: self.link.send('STOP')
             except Exception: self.ready=False
@@ -1139,6 +1232,7 @@ class ArmApp:
         # Cancel future sends first; send STOP before redrawing anything.
         self.cancel_pick_place()
         self.plan=[]; self.pending=None; self.busy=False; self.stopped=True
+        self._finish_steps=None; self._finish_from=None
         self.stop_pending=False; self.stop_acknowledged=False; self.knob_takeover_pending=False
         if self.ready:
             try:
@@ -1424,7 +1518,7 @@ class ArmApp:
             retry_text=f' (found by retrying from {seed_note})' if seed_note else ''
             retry_text=(' (auto)' if auto else '')+retry_text
             self.feedback(f'Preview ready{retry_text} — IK error {r["error"]*1000:.3f} mm; rounded-command miss {miss:.2f} mm; move time {duration/1000:.2f} s. Move Arm to execute.','success')
-            self.log(f'Angles deg {np.rad2deg(q).round(2).tolist()}; rounded miss {miss:.2f} mm; one checked coordinated target; {duration/1000:.2f} s cubic motion. Preview only.')
+            self.log(f'Angles deg {np.rad2deg(ik.real_angles(q)).round(2).tolist()}; rounded miss {miss:.2f} mm; one checked coordinated target; {duration/1000:.2f} s cubic motion. Preview only.')
             # Show the calibrated/rounded command endpoint, so the solid arm
             # coincides with this ghost when the reported command arrives.
             self.draw(ik.servo_to_q(self.cal,waypoints[0]),target,r)
@@ -1522,7 +1616,12 @@ class ArmApp:
                 self.log('Calibration loaded. Reinitializing emulator upright for IK preview.')
                 self.initialize()
             else:
-                self.log('Calibration loaded; servos require explicit initialization. Arrange the arm upright before first enable, then Straighten arm upright.')
+                if getattr(self,'servos_on',False) and self.ready:
+                    limits=' '.join(f'{lo} {hi}' for lo,hi in (self.limit(j) for j in range(5)))
+                    self.send(f'CFG {limits} {STEP_MS} {SETTLE_MS}')
+                    self.log('Calibration loaded. Servos are still on: click "Slowly straighten upright" to return upright with the new calibration.')
+                else:
+                    self.log('Calibration loaded; servos require explicit initialization. Arrange the arm upright before first enable, then Straighten arm upright.')
         except Exception as e: self.log(str(e))
         finally: self.refresh_controls()
 
@@ -1930,7 +2029,7 @@ class ArmApp:
             q=ik.servo_to_q(self.cal,self.positions)
             xyz=ik.position(self.m,q)*1000
             self.readout.set('Current estimate   XYZ mm: '+np.array2string(xyz,precision=1,suppress_small=True)+
-                '\nbase/shoulder/elbow/wrist deg: '+np.array2string(np.rad2deg(q),precision=1,suppress_small=True))
+                '\nbase/shoulder/elbow/wrist deg: '+np.array2string(np.rad2deg(ik.real_angles(q)),precision=1,suppress_small=True))
         else: self.readout.set('Raw S1..S5: '+str(self.positions)+' | calibration needed for XYZ')
         self.update_servo_line()
         if self.preview and self.positions!=self.preview['start']: self.invalidate()
