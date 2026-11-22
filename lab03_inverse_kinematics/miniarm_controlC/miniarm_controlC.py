@@ -3,7 +3,7 @@
 Keep this folder next to ../python. Core uses metres/radians; entries use mm.
 APP and KNOB controls are manual and bypass IK collision checks.
 """
-SERIAL_PORT = "COM3"      # Arduino IDE: Tools -> Port shows the right one
+SERIAL_PORT = "COM11"      # Arduino IDE: Tools -> Port shows the right one
 BAUD_RATE = 115200         # must match miniarm_controlC.ino
 
 # --- Calibration ---
@@ -16,7 +16,7 @@ GEOMETRY = {
     "H": 120.0,   # table surface to the center of the arm (S4) shaft
     "L1": 56.5,   # arm axis to forearm axis
     "L2": 61.5,   # forearm axis to wrist axis
-    "L3": 100.0,  # wrist axis to the grip point (middle of the claw fingers), along the claw
+    "L3": 90.0,  # wrist axis to the grip point (middle of the claw fingers), along the claw
     "L3_OFFSET": 10.0,  # grip point sideways from the claw line: + = claw's top side
                         # (+Z when the claw points forward level). Handled as a fixed
                         # wrist tilt of atan(L3_OFFSET/L3); upright stays fully
@@ -42,7 +42,7 @@ NUDGE = 15                 # APP CONTROL +/- buttons change a servo value by thi
 # makes a firm final correction instead of creeping to a stop inside its dead
 # zone short of the target. Set FINISH_OVERSHOOT to 0 to turn it off.
 FINISH_OVERSHOOT = 6       # raw servo units past the target
-FINISH_JOINTS = ("shoulder",)   # any of "base", "shoulder", "elbow", "wrist"
+FINISH_JOINTS = ("shoulder","elbow","wrist")   # any of "base", "shoulder", "elbow", "wrist"
 FINISH_MIN_MOVE = 1        # skip joints that moved less than this many raw units
 AUTO_PREVIEW_MS = 0      # IK: recalculate the preview this long after you stop typing (0 = off)
 
