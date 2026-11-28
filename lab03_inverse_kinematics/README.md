@@ -34,5 +34,3 @@ The main handout defines the required work; the reference files explain its step
 ## Maintenance history
 
 Historical [code review](docs/maintenance/CODE_REVIEW.md), [simulation validation](docs/maintenance/VALIDATION.md) and [GUI validation](docs/maintenance/GUI_VALIDATION.md) are grouped under `docs/maintenance/`. They preserve earlier design/test evidence; their old version descriptions are not current operating instructions. Firmware host-test instructions remain in [miniarm_controlC/qa](miniarm_controlC/qa/README.md).
-
-`Lab03_Report_Template.docx` is retained as an optional legacy worksheet. Students do not need to complete it; follow the final report structure at the end of STUDENT_GUIDE.md.
